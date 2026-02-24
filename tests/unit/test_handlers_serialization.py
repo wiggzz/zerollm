@@ -16,3 +16,15 @@ def test_api_response_serializes_decimal_values():
     assert body["idle_timeout"] == 1
     assert body["util"] == 1.5
 
+
+def test_api_response_preserves_string_body_for_sse():
+    payload = "data: {\"id\":\"chunk-1\"}\n\ndata: [DONE]\n\n"
+    response = handlers._api_response(
+        200,
+        payload,
+        headers={"Content-Type": "text/event-stream; charset=utf-8"},
+    )
+
+    assert response["statusCode"] == 200
+    assert response["headers"]["Content-Type"] == "text/event-stream; charset=utf-8"
+    assert response["body"] == payload

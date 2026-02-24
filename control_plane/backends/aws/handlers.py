@@ -49,12 +49,13 @@ def _get_compute_backend():
     )
 
 
-def _api_response(status_code: int, body: dict, headers: dict | None = None) -> dict:
+def _api_response(status_code: int, body: dict | str, headers: dict | None = None) -> dict:
     """Format an API Gateway v2 response."""
+    response_body = body if isinstance(body, str) else json.dumps(body, default=_json_default)
     resp = {
         "statusCode": status_code,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(body, default=_json_default),
+        "body": response_body,
     }
     if headers:
         resp["headers"].update(headers)

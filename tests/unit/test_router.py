@@ -63,9 +63,9 @@ def test_handle_inference_proxies_to_ready_instance_and_updates_last_request(sta
 
     captured = {}
 
-    def fake_proxy(ip: str, port: int, path: str, body: dict):
+    def fake_proxy(ip: str, port: int, path: str, body: dict, **kwargs):
         captured.update({"ip": ip, "port": port, "path": path, "body": body})
-        return 200, {"id": "chatcmpl-1"}
+        return 200, {"id": "chatcmpl-1"}, {}
 
     monkeypatch.setattr(router, "proxy_request", fake_proxy)
 
@@ -112,3 +112,62 @@ def test_handle_inference_returns_502_when_proxy_errors(state, monkeypatch):
 
     assert result["status_code"] == 502
     assert result["body"]["error"]["type"] == "bad_gateway"
+
+
+def test_handle_inference_proxies_sse_payload_and_headers(state, monkeypatch):
+    state.put_instance(
+        {
+            "instance_id": "model#Qwen/Qwen3-32B",
+            "provider_instance_id": "i-ready",
+            "model": "Qwen/Qwen3-32B",
+            "status": "ready",
+            "ip": "10.0.0.1",
+            "instance_type": "g5.xlarge",
+            "launched_at": 100,
+            "last_request_at": 100,
+        }
+    )
+
+    monkeypatch.setattr(
+        router,
+        "proxy_request",
+        lambda *args, **kwargs: (
+            200,
+            "data: {\"id\":\"chunk-1\"}\n\ndata: [DONE]\n\n",
+            {"Content-Type": "text/event-stream; charset=utf-8"},
+        ),
+    )
+
+    result = router.handle_inference(
+        model="Qwen/Qwen3-32B",
+        body={"model": "Qwen/Qwen3-32B", "messages": [], "stream": True},
+        state=state,
+        trigger_scale_up=lambda *_: None,
+    )
+
+    assert result["status_code"] == 200
+    assert result["headers"]["Content-Type"] == "text/event-stream; charset=utf-8"
+    assert result["body"].startswith("data: ")
+
+
+def test_proxy_request_returns_buffered_sse_body(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        headers = {"Content-Type": "text/event-stream; charset=utf-8"}
+        text = "data: hello\n\n"
+
+        def json(self):
+            raise AssertionError("json() should not be called for SSE responses")
+
+    monkeypatch.setattr(router.requests, "post", lambda *args, **kwargs: FakeResponse())
+
+    status, payload, headers = router.proxy_request(
+        ip="10.0.0.1",
+        port=router.VLLM_PORT,
+        path="/v1/chat/completions",
+        body={"model": "Qwen/Qwen3-32B", "stream": True},
+    )
+
+    assert status == 200
+    assert payload == "data: hello\n\n"
+    assert headers == {"Content-Type": "text/event-stream; charset=utf-8"}
