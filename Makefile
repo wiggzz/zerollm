@@ -3,13 +3,13 @@
 STACK_NAME ?= diogenes
 
 setup:
-	uv sync --project control_plane
+	uv sync
 
 setup-dev:
-	uv sync --project control_plane --extra dev
+	uv sync --extra dev
 
 sync-requirements:
-	uv export --project control_plane --no-dev --no-hashes --no-header --output-file requirements.txt
+	uv export --no-dev --no-hashes --no-header --output-file requirements.txt
 
 ami-build:
 	./ami/imagebuilder.sh build
@@ -26,10 +26,10 @@ ami-build-latest:
 test: test-unit
 
 test-unit:
-	uv run --project control_plane --no-sync pytest tests/unit/ -v
+	uv run --no-sync pytest tests/unit/ -v
 
 test-e2e:
-	uv run --project control_plane --no-sync pytest tests/e2e/ -v
+	uv run --no-sync pytest tests/e2e/ -v
 
 build: sync-requirements
 	sam build
@@ -41,11 +41,11 @@ validate:
 	sam validate
 
 seed-models:
-	AWS_REGION="$(AWS_REGION)" uv run --project control_plane --no-sync python scripts/seed_models.py
+	AWS_REGION="$(AWS_REGION)" uv run --no-sync python scripts/seed_models.py
 
 create-api-key:
 	@test -n "$(EMAIL)" || (echo "Usage: make create-api-key EMAIL=you@example.com" && exit 1)
-	AWS_REGION="$(AWS_REGION)" uv run --project control_plane --no-sync python scripts/create_api_key.py --email "$(EMAIL)"
+	AWS_REGION="$(AWS_REGION)" uv run --no-sync python scripts/create_api_key.py --email "$(EMAIL)"
 
 clean:
 	rm -rf .aws-sam/
