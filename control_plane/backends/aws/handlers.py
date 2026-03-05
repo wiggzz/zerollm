@@ -9,8 +9,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from decimal import Decimal
 
+logging.basicConfig(
+    level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO),
+    format="%(levelname)s %(name)s %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 

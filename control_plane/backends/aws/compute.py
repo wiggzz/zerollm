@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 import boto3
+from botocore.exceptions import ClientError
+
+logger = logging.getLogger(__name__)
 
 
 class EC2ComputeBackend:
@@ -21,36 +26,52 @@ class EC2ComputeBackend:
         self._ec2 = boto3.client("ec2", **kwargs)
         self._ami_id = ami_id
         self._security_group_id = security_group_id
-        self._subnet_id = subnet_id
+        # Accept a single subnet ID or a comma-separated list for multi-AZ fallback.
+        self._subnet_ids = [s.strip() for s in subnet_id.split(",") if s.strip()]
         self._instance_profile_arn = instance_profile_arn
         self._vllm_api_key = vllm_api_key
 
     def launch(self, model_config: dict) -> tuple[str, str]:
         """Launch an EC2 GPU instance for the given model config.
 
-        Returns (instance_id, private_ip).
+        Tries each configured subnet in order, falling back on InsufficientInstanceCapacity.
+        Returns (instance_id, public_ip).
         """
         user_data = self._build_user_data(model_config)
+        last_exc = None
 
-        resp = self._ec2.run_instances(
-            ImageId=self._ami_id,
-            InstanceType=model_config["instance_type"],
-            MinCount=1,
-            MaxCount=1,
-            SecurityGroupIds=[self._security_group_id],
-            SubnetId=self._subnet_id,
-            IamInstanceProfile={"Arn": self._instance_profile_arn},
-            UserData=user_data,
-            TagSpecifications=[
-                {
-                    "ResourceType": "instance",
-                    "Tags": [
-                        {"Key": "Name", "Value": f"diogenes-{model_config['name']}"},
-                        {"Key": "diogenes:model", "Value": model_config["name"]},
+        for subnet_id in self._subnet_ids:
+            try:
+                resp = self._ec2.run_instances(
+                    ImageId=self._ami_id,
+                    InstanceType=model_config["instance_type"],
+                    MinCount=1,
+                    MaxCount=1,
+                    SecurityGroupIds=[self._security_group_id],
+                    SubnetId=subnet_id,
+                    IamInstanceProfile={"Arn": self._instance_profile_arn},
+                    UserData=user_data,
+                    TagSpecifications=[
+                        {
+                            "ResourceType": "instance",
+                            "Tags": [
+                                {"Key": "Name", "Value": f"diogenes-{model_config['name']}"},
+                                {"Key": "diogenes:model", "Value": model_config["name"]},
+                            ],
+                        }
                     ],
-                }
-            ],
-        )
+                )
+                break
+            except ClientError as exc:
+                if exc.response["Error"]["Code"] == "InsufficientInstanceCapacity":
+                    logger.warning(
+                        "InsufficientInstanceCapacity in subnet %s, trying next", subnet_id
+                    )
+                    last_exc = exc
+                    continue
+                raise
+        else:
+            raise last_exc
 
         instance = resp["Instances"][0]
         instance_id = instance["InstanceId"]

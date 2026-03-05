@@ -50,36 +50,40 @@ fi
 echo "Using AWS_REGION=${AWS_REGION}"
 
 resolve_subnet_id() {
-  local subnet_id
-  subnet_id="$(
+  # Return all default-VPC subnets across AZs (comma-separated) so the compute
+  # backend can fall back to another AZ on InsufficientInstanceCapacity.
+  local subnet_ids
+  subnet_ids="$(
     aws ec2 describe-subnets \
       --region "${AWS_REGION}" \
       --filters "Name=default-for-az,Values=true" "Name=state,Values=available" \
-      --query "sort_by(Subnets,&AvailabilityZone)[0].SubnetId" \
+      --query "join(',', sort_by(Subnets,&AvailabilityZone)[*].SubnetId)" \
       --output text 2>/dev/null || true
   )"
-  if [[ -n "${subnet_id}" && "${subnet_id}" != "None" ]]; then
-    echo "${subnet_id}"
+  if [[ -n "${subnet_ids}" && "${subnet_ids}" != "None" ]]; then
+    echo "${subnet_ids}"
     return 0
   fi
-  subnet_id="$(
+  subnet_ids="$(
     aws ec2 describe-subnets \
       --region "${AWS_REGION}" \
       --filters "Name=state,Values=available" \
-      --query "sort_by(Subnets,&AvailabilityZone)[0].SubnetId" \
+      --query "join(',', sort_by(Subnets,&AvailabilityZone)[*].SubnetId)" \
       --output text 2>/dev/null || true
   )"
-  if [[ -n "${subnet_id}" && "${subnet_id}" != "None" ]]; then
-    echo "${subnet_id}"
+  if [[ -n "${subnet_ids}" && "${subnet_ids}" != "None" ]]; then
+    echo "${subnet_ids}"
     return 0
   fi
   return 1
 }
 
 resolve_vpc_for_subnet() {
+  # Use only the first subnet ID when looking up the VPC.
+  local first_subnet="${GPU_SUBNET_ID%%,*}"
   aws ec2 describe-subnets \
     --region "${AWS_REGION}" \
-    --subnet-ids "${GPU_SUBNET_ID}" \
+    --subnet-ids "${first_subnet}" \
     --query "Subnets[0].VpcId" \
     --output text
 }
