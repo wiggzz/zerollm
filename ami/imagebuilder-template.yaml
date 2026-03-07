@@ -30,11 +30,11 @@ Parameters:
       - DISABLED
   PrimaryModelId:
     Type: String
-    Default: Qwen/Qwen3.5-9B
+    Default: Qwen/Qwen3.5-35B-A3B
     Description: Primary model to pre-download into the AMI
   SmallModelId:
     Type: String
-    Default: Qwen/Qwen3.5-0.8B
+    Default: Qwen/Qwen3.5-4B
     Description: Small fast model to pre-download into the AMI
 
 Resources:
