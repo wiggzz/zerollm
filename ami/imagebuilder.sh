@@ -41,11 +41,18 @@ cmd="${1:-build}"
 AMI_PIPELINE_STACK="${AMI_PIPELINE_STACK:-diogenes-ami-pipeline}"
 AMI_PIPELINE_ENV="${AMI_PIPELINE_ENV:-dev}"
 BUILDER_INSTANCE_TYPE="${BUILDER_INSTANCE_TYPE:-c5.2xlarge}"
-IMAGE_VERSION="${IMAGE_VERSION:-1.0.5}"
 PIPELINE_STATUS="${PIPELINE_STATUS:-DISABLED}"
 TEMPLATE_FILE="${TEMPLATE_FILE:-ami/imagebuilder-template.yaml}"
-PRIMARY_MODEL_ID="${PRIMARY_MODEL_ID:-Qwen/Qwen2.5-Coder-32B-Instruct}"
-SMALL_MODEL_ID="${SMALL_MODEL_ID:-Qwen/Qwen2.5-0.5B-Instruct}"
+
+# Read these from the template file so they stay in sync automatically.
+# Can still be overridden via env vars.
+_template_default() {
+  local param="$1"
+  awk "/^  ${param}:/{f=1} f && /Default:/{sub(/^[[:space:]]*Default:[[:space:]]*/,\"\"); print; exit}" "${TEMPLATE_FILE}"
+}
+IMAGE_VERSION="${IMAGE_VERSION:-$(_template_default ImageVersion)}"
+PRIMARY_MODEL_ID="${PRIMARY_MODEL_ID:-$(_template_default PrimaryModelId)}"
+SMALL_MODEL_ID="${SMALL_MODEL_ID:-$(_template_default SmallModelId)}"
 
 default_base_ami_for_region() {
   case "$1" in
