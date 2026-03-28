@@ -20,7 +20,7 @@ Parameters:
     Description: Instance type used by Image Builder during AMI creation (needs network bandwidth for large downloads)
   ImageVersion:
     Type: String
-    Default: 1.0.8
+    Default: 1.0.9
     Description: Semantic version for Image Builder component/recipe (bump on recipe changes)
   PipelineStatus:
     Type: String
@@ -30,7 +30,7 @@ Parameters:
       - DISABLED
   PrimaryModelId:
     Type: String
-    Default: Qwen/Qwen3.5-27B
+    Default: Qwen/Qwen3.5-27B-FP8
     Description: Primary model to pre-download into the AMI
   SmallModelId:
     Type: String

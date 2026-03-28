@@ -15,9 +15,9 @@ if str(REPO_ROOT) not in sys.path:
 
 DEFAULT_MODELS = [
     {
-        "name": "Qwen/Qwen3.5-27B",
-        "instance_type": "g6.12xlarge",
-        "vllm_args": "--tensor-parallel-size 4 --max-model-len 32768 --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder",
+        "name": "Qwen/Qwen3.5-27B-FP8",
+        "instance_type": "g6e.8xlarge",
+        "vllm_args": "--max-model-len 32768 --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder",
         "idle_timeout": 300,
     },
     {
