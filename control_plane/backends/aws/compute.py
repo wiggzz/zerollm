@@ -110,11 +110,6 @@ MODEL_NAME={model_id}
 VLLM_ARGS="{vllm_args}"
 MODELEOF
 
-# Ensure LD_LIBRARY_PATH is set in start_vllm.sh for CUDA compat lib fix
-# (idempotent — no-op on v1.0.5+ AMIs that already have it)
-sed -i 's|-e HF_HOME=/opt/models|-e LD_LIBRARY_PATH=/lib/x86_64-linux-gnu -e HF_HOME=/opt/models|' \
-  /opt/diogenes/start_vllm.sh 2>/dev/null || true
-
 # Start vLLM (assumes AMI has vllm installed and systemd service configured)
 systemctl start vllm
 """
