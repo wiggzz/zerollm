@@ -11,6 +11,7 @@ import time
 import requests
 
 from control_plane.core.interfaces import ComputeBackend, StateStore
+from control_plane.shared.config import normalize_model_name
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ def scale_up(
 
     Returns the instance record.
     """
+    model_name = normalize_model_name(model_name)
     # Idempotency: skip if already starting or ready
     existing = state.list_instances(model=model_name, status="starting")
     existing += state.list_instances(model=model_name, status="ready")

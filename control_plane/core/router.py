@@ -9,6 +9,7 @@ from typing import Any
 import requests
 
 from control_plane.core.interfaces import StateStore
+from control_plane.shared.config import normalize_model_name
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,7 @@ def handle_inference(
             "body": {"error": {"message": "model is required", "type": "invalid_request_error"}},
         }
 
+    model = normalize_model_name(model)
     ready_instances = state.list_instances(model=model, status="ready")
     if not ready_instances:
         logger.info("No ready instance for model=%s, triggering scale-up", model)

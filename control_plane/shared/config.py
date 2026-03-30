@@ -5,6 +5,11 @@ from __future__ import annotations
 import os
 
 
+def normalize_model_name(name: str) -> str:
+    """Strip org prefix so both 'Qwen/Qwen3.5-4B' and 'Qwen3.5-4B' resolve identically."""
+    return name.split("/", 1)[-1] if "/" in name else name
+
+
 def get_env(name: str, default: str | None = None) -> str:
     """Get an environment variable, raising if missing and no default."""
     value = os.environ.get(name, default)
