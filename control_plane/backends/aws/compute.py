@@ -101,6 +101,8 @@ class EC2ComputeBackend:
             vllm_args = f"{vllm_args} --api-key {self._vllm_api_key}".strip()
         # model_id is the HuggingFace path for vLLM; falls back to name.
         model_id = model_config.get("model_id") or model_config["name"]
+        model_name = model_config.get("name", model_id)
+        model_name_safe = model_name.replace("/", "_")
         return f"""#!/bin/bash
 set -euo pipefail
 
@@ -109,6 +111,34 @@ cat > /etc/diogenes-model.env << 'MODELEOF'
 MODEL_NAME={model_id}
 VLLM_ARGS="{vllm_args}"
 MODELEOF
+
+# Configure CloudWatch Logs agent to stream vLLM logs
+INSTANCE_ID=$(curl -sf --connect-timeout 3 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "unknown")
+if command -v /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl >/dev/null 2>&1; then
+  cat > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json << CWEOF
+{{
+  "agent": {{"run_as_user": "root"}},
+  "logs": {{
+    "logs_collected": {{
+      "files": {{
+        "collect_list": [
+          {{
+            "file_path": "/var/log/vllm.log",
+            "log_group_name": "/diogenes/vllm",
+            "log_stream_name": "$INSTANCE_ID/{model_name_safe}",
+            "timezone": "UTC",
+            "retention_in_days": 7
+          }}
+        ]
+      }}
+    }}
+  }}
+}}
+CWEOF
+  /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config -m ec2 -s \
+    -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json || true
+fi
 
 # Start vLLM (assumes AMI has vllm installed and systemd service configured)
 systemctl start vllm

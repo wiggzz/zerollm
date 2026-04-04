@@ -2,46 +2,47 @@
 # Show vLLM startup logs and cluster status for active GPU instances.
 #
 # Usage:
-#   ./scripts/instance-logs.sh            # logs for all active instances
-#   MODEL=Qwen3.5-4B ./scripts/instance-logs.sh   # filter by model
-#   LINES=100 ./scripts/instance-logs.sh  # more lines (default: 60)
+#   ./scripts/instance-logs.sh                    # logs for all active instances
+#   MODEL_FILTER=Qwen3.5-4B ./scripts/instance-logs.sh   # filter by model
+#   LINES=100 ./scripts/instance-logs.sh          # more lines (default: 60)
 set -euo pipefail
 
 AWS_REGION="${AWS_REGION:-$(aws configure get region 2>/dev/null || true)}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
 INSTANCES_TABLE="diogenes-instances-${ENVIRONMENT}"
 LINES="${LINES:-60}"
-MODEL_FILTER="${MODEL:-}"
+MODEL_FILTER="${MODEL_FILTER:-}"
 
 if [[ -z "${AWS_REGION}" ]]; then
   echo "AWS_REGION is required" >&2
   exit 1
 fi
 
-# Fetch all non-terminated instances
-items="$(
-  aws dynamodb scan \
-    --region "${AWS_REGION}" \
-    --table-name "${INSTANCES_TABLE}" \
-    --filter-expression "#s <> :t" \
-    --expression-attribute-names '{"#s":"status"}' \
-    --expression-attribute-values '{":t":{"S":"terminated"}}' \
-    --output json
-)"
+# Fetch all non-terminated instances into a temp file
+tmpfile="$(mktemp)"
+trap 'rm -f "$tmpfile"' EXIT
 
-count="$(echo "${items}" | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('Items',[])))")"
+aws dynamodb scan \
+  --region "${AWS_REGION}" \
+  --table-name "${INSTANCES_TABLE}" \
+  --filter-expression "#s <> :t" \
+  --expression-attribute-names '{"#s":"status"}' \
+  --expression-attribute-values '{":t":{"S":"terminated"}}' \
+  --output json > "$tmpfile" 2>&1 || { echo "DynamoDB scan failed: $(cat "$tmpfile")" >&2; exit 1; }
+
+count="$(python3 -c "import json; data=json.load(open('$tmpfile')); print(len(data.get('Items',[])))")"
 if [[ "${count}" == "0" ]]; then
   echo "No active instances found in ${INSTANCES_TABLE}."
   exit 0
 fi
 
-echo "${items}" | python3 - <<'PYEOF'
-import json, subprocess, sys, os, time
+python3 <<PYEOF
+import json, subprocess, os, time
 
-data = json.loads(sys.stdin.read())
-region = os.environ["AWS_REGION"]
-lines = os.environ.get("LINES", "60")
-model_filter = os.environ.get("MODEL_FILTER", "")
+data = json.load(open("$tmpfile"))
+region = "$AWS_REGION"
+lines = "$LINES"
+model_filter = "$MODEL_FILTER"
 
 def g(item, key):
     return list(item.get(key, {}).values())[0] if key in item else ""
@@ -57,18 +58,17 @@ for item in data.get("Items", []):
 
     launched = g(item, "launched_at")
     if launched:
-        import datetime
         age_s = int(time.time()) - int(launched)
-        age   = f"{age_s//60}m{age_s%60}s"
+        age   = f"{age_s // 60}m{age_s % 60}s"
     else:
         age = "?"
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"  model   : {model}")
     print(f"  status  : {status}  (age: {age})")
     print(f"  ip      : {ip}")
     print(f"  ec2     : {ec2_id}")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     if not ec2_id or not ec2_id.startswith("i-"):
         print("  (no EC2 instance ID recorded)")
@@ -83,8 +83,7 @@ for item in data.get("Items", []):
              "--output", "text"],
             capture_output=True, text=True, timeout=10
         )
-        ec2_state = r.stdout.strip()
-        print(f"  ec2 state: {ec2_state}")
+        print(f"  ec2 state: {r.stdout.strip()}")
     except Exception as e:
         print(f"  ec2 state: error ({e})")
 
@@ -95,10 +94,9 @@ for item in data.get("Items", []):
              f"http://{ip}:8000/health"],
             capture_output=True, text=True, timeout=8
         )
-        health = "UP" if r.returncode == 0 else "DOWN"
+        print(f"  health  : {'UP' if r.returncode == 0 else 'DOWN'}")
     except Exception:
-        health = "DOWN"
-    print(f"  health  : {health}")
+        print(f"  health  : DOWN")
 
     print(f"\n--- vLLM journal (last {lines} lines via SSM) ---")
 
@@ -110,7 +108,7 @@ for item in data.get("Items", []):
              "--instance-ids", ec2_id,
              "--document-name", "AWS-RunShellScript",
              "--parameters",
-             f'commands=["journalctl -u vllm -n {lines} --no-pager 2>&1 || echo \\"vllm service not found\\""]',
+             f"commands=['journalctl -u vllm -n {lines} --no-pager 2>&1']",
              "--output", "json"],
             capture_output=True, text=True, timeout=15
         )
@@ -121,7 +119,7 @@ for item in data.get("Items", []):
         cmd_data = json.loads(cmd_result.stdout)
         cmd_id = cmd_data["Command"]["CommandId"]
 
-        # Poll for result
+        # Poll for result (up to 30s)
         for attempt in range(10):
             time.sleep(3)
             out = subprocess.run(
@@ -135,9 +133,9 @@ for item in data.get("Items", []):
             if out.returncode != 0:
                 continue
             inv = json.loads(out.stdout)
-            invocation_status = inv.get("Status", "")
-            if invocation_status in ("InProgress", "Pending", "Delayed"):
-                print(f"  (waiting for SSM... {invocation_status})", end="\r", flush=True)
+            inv_status = inv.get("Status", "")
+            if inv_status in ("InProgress", "Pending", "Delayed"):
+                print(f"  (waiting for SSM... {inv_status})", end="\r", flush=True)
                 continue
             content = inv.get("StandardOutputContent", "").strip()
             err_content = inv.get("StandardErrorContent", "").strip()

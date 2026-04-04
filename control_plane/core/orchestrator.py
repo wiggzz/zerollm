@@ -87,7 +87,7 @@ def scale_up(
     placeholder["ip"] = ip
 
     try:
-        healthy = poll_health(ip, VLLM_PORT, timeout=800, api_key=vllm_api_key)
+        healthy = poll_health(ip, VLLM_PORT, timeout=860, api_key=vllm_api_key)
     except Exception:
         logger.exception("poll_health raised for %s, terminating", provider_instance_id)
         healthy = False

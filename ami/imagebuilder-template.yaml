@@ -20,7 +20,7 @@ Parameters:
     Description: Instance type used by Image Builder during AMI creation (needs network bandwidth for large downloads)
   ImageVersion:
     Type: String
-    Default: 1.1.0
+    Default: 1.2.0
     Description: Semantic version for Image Builder component/recipe (bump on recipe changes)
   PipelineStatus:
     Type: String
@@ -66,7 +66,7 @@ Resources:
       Name: !Sub diogenes-setup-${Environment}
       Platform: Linux
       Version: !Ref ImageVersion
-      Description: Install vLLM directly via pip, pre-download models
+      Description: Install vLLM directly via pip, CloudWatch agent, pre-download models
       Data: !Sub |
         name: DiogenesSetup
         description: Install runtime dependencies for Diogenes GPU nodes.
@@ -85,10 +85,18 @@ Resources:
                       apt-get update -y
                       apt-get install -y --no-install-recommends ca-certificates curl git python3 python3-pip python3-venv
 
+                      # Install CloudWatch agent for persistent log streaming
+                      curl -sO https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
+                      dpkg -i amazon-cloudwatch-agent.deb
+                      rm amazon-cloudwatch-agent.deb
+
                       # Install vLLM directly (no Docker needed — base AMI has CUDA drivers)
                       python3 -m venv /opt/vllm-env
                       /opt/vllm-env/bin/pip install --upgrade pip
                       /opt/vllm-env/bin/pip install vllm huggingface-hub
+
+                      # Pre-compile Python bytecode to speed up cold-start import time
+                      /opt/vllm-env/bin/python -m compileall -q /opt/vllm-env/lib/ 2>/dev/null || true
 
                       # Pre-download model weights into /opt/models so cold starts don't need HuggingFace
                       mkdir -p /opt/models
@@ -127,6 +135,8 @@ Resources:
                       RestartSec=5
                       EnvironmentFile=/etc/diogenes-model.env
                       ExecStart=/opt/diogenes/start_vllm.sh
+                      StandardOutput=append:/var/log/vllm.log
+                      StandardError=append:/var/log/vllm.log
                       [Install]
                       WantedBy=multi-user.target
                       EOF

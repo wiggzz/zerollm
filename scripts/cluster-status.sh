@@ -11,10 +11,12 @@ if [[ -z "${AWS_REGION}" ]]; then
   exit 1
 fi
 
-aws dynamodb scan \
+scan_output="$(aws dynamodb scan \
   --region "${AWS_REGION}" \
   --table-name "${INSTANCES_TABLE}" \
-  --output json | python3 -c "
+  --output json 2>&1)" || { echo "DynamoDB scan failed: ${scan_output}" >&2; exit 1; }
+
+echo "${scan_output}" | python3 -c "
 import json, sys, time
 
 data = json.load(sys.stdin)
