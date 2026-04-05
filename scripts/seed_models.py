@@ -15,17 +15,21 @@ if str(REPO_ROOT) not in sys.path:
 
 DEFAULT_MODELS = [
     {
-        "name": "Qwen3.5-27B-FP8",
-        "model_id": "Qwen/Qwen3.5-27B-FP8",
-        "instance_type": "g6e.8xlarge",
-        "vllm_args": "--max-model-len 32768 --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --enforce-eager",
+        "name": "Qwen/Qwen3.5-27B",
+        # Path to the pre-downloaded GGUF file in the AMI (must match PrimaryModelGgufFile).
+        "model_id": "/opt/models/Qwen_Qwen3.5-27B-Q4_K_M.gguf",
+        "instance_type": "g5.2xlarge",
+        # llama-server flags: full GPU offload, 32k context, Jinja template for tool calling
+        "vllm_args": "-ngl 99 --ctx-size 32768 --jinja",
         "idle_timeout": 300,
     },
     {
-        "name": "Qwen3.5-4B",
-        "model_id": "Qwen/Qwen3.5-4B",
+        "name": "Qwen/Qwen3.5-4B",
+        # Path to the pre-downloaded GGUF file in the AMI (must match SmallModelGgufFile).
+        "model_id": "/opt/models/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
         "instance_type": "g5.xlarge",
-        "vllm_args": "--max-model-len 32768 --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --enforce-eager",
+        # llama-server flags: full GPU offload, 32k context, Jinja template for tool calling
+        "vllm_args": "-ngl 99 --ctx-size 32768 --jinja",
         "idle_timeout": 300,
     },
 ]

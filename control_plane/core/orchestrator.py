@@ -15,7 +15,11 @@ from control_plane.shared.config import normalize_model_name
 
 logger = logging.getLogger(__name__)
 
-VLLM_PORT = 8000
+SERVER_PORT = 8000
+VLLM_PORT = SERVER_PORT  # backwards-compat alias
+
+# Maximum time (seconds) to wait for an instance to become healthy before terminating.
+MAX_START_SECONDS = 1200  # 20 minutes
 
 
 def scale_up(
@@ -86,22 +90,12 @@ def scale_up(
     placeholder["provider_instance_id"] = provider_instance_id
     placeholder["ip"] = ip
 
-    try:
-        healthy = poll_health(ip, VLLM_PORT, timeout=860, api_key=vllm_api_key)
-    except Exception:
-        logger.exception("poll_health raised for %s, terminating", provider_instance_id)
-        healthy = False
-
-    if healthy:
-        state.update_instance(placeholder_id, status="ready", last_request_at=int(time.time()))
-        placeholder["status"] = "ready"
-        logger.info("Instance %s is ready", provider_instance_id)
-    else:
-        logger.error("Instance %s failed health check, terminating", provider_instance_id)
-        compute.terminate(provider_instance_id)
-        state.update_instance(placeholder_id, status="terminated")
-        placeholder["status"] = "terminated"
-
+    # Return immediately — EventBridge polls /health every minute via check_health().
+    logger.info(
+        "Instance %s launching for model %s; health will be checked by EventBridge",
+        provider_instance_id,
+        model_name,
+    )
     return placeholder
 
 
@@ -137,6 +131,66 @@ def scale_down(
             terminated.append(inst["instance_id"])
 
     return terminated
+
+
+def check_health(
+    state: StateStore,
+    compute: ComputeBackend,
+    api_key: str = "",
+) -> dict:
+    """Check health of all 'starting' instances (called by EventBridge every minute).
+
+    For each starting instance:
+    - If healthy → mark 'ready'.
+    - If older than MAX_START_SECONDS with no response → terminate.
+
+    Returns counts of what happened.
+    """
+    now = int(time.time())
+    results: dict[str, list] = {"became_ready": [], "terminated": [], "still_starting": []}
+
+    for inst in state.list_instances(status="starting"):
+        instance_id = inst["instance_id"]
+        provider_id = inst.get("provider_instance_id", "")
+        ip = inst.get("ip", "")
+        age = now - int(inst.get("launched_at", now))
+
+        if age > MAX_START_SECONDS:
+            logger.error(
+                "Instance %s (model=%s) timed out after %ds, terminating",
+                instance_id,
+                inst.get("model"),
+                age,
+            )
+            if provider_id:
+                try:
+                    compute.terminate(provider_id)
+                except Exception:
+                    logger.exception("Failed to terminate timed-out instance %s", provider_id)
+            state.update_instance(instance_id, status="terminated")
+            results["terminated"].append(instance_id)
+            continue
+
+        if not ip:
+            results["still_starting"].append(instance_id)
+            continue
+
+        # Single quick probe — don't block; EventBridge retries next minute.
+        try:
+            url = f"http://{ip}:{SERVER_PORT}/health"
+            headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+            resp = requests.get(url, headers=headers, timeout=5)
+            if resp.status_code == 200:
+                state.update_instance(instance_id, status="ready", last_request_at=now)
+                logger.info("Instance %s (model=%s) is now ready", instance_id, inst.get("model"))
+                results["became_ready"].append(instance_id)
+            else:
+                logger.debug("Instance %s health returned %s", instance_id, resp.status_code)
+                results["still_starting"].append(instance_id)
+        except requests.RequestException:
+            results["still_starting"].append(instance_id)
+
+    return results
 
 
 def poll_health(

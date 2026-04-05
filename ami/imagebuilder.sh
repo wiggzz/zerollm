@@ -51,8 +51,10 @@ _template_default() {
   awk "/^  ${param}:/{f=1} f && /Default:/{sub(/^[[:space:]]*Default:[[:space:]]*/,\"\"); print; exit}" "${TEMPLATE_FILE}"
 }
 IMAGE_VERSION="${IMAGE_VERSION:-$(_template_default ImageVersion)}"
-PRIMARY_MODEL_ID="${PRIMARY_MODEL_ID:-$(_template_default PrimaryModelId)}"
-SMALL_MODEL_ID="${SMALL_MODEL_ID:-$(_template_default SmallModelId)}"
+PRIMARY_MODEL_GGUF_REPO="${PRIMARY_MODEL_GGUF_REPO:-$(_template_default PrimaryModelGgufRepo)}"
+PRIMARY_MODEL_GGUF_FILE="${PRIMARY_MODEL_GGUF_FILE:-$(_template_default PrimaryModelGgufFile)}"
+SMALL_MODEL_GGUF_REPO="${SMALL_MODEL_GGUF_REPO:-$(_template_default SmallModelGgufRepo)}"
+SMALL_MODEL_GGUF_FILE="${SMALL_MODEL_GGUF_FILE:-$(_template_default SmallModelGgufFile)}"
 
 default_base_ami_for_region() {
   case "$1" in
@@ -178,8 +180,10 @@ deploy_pipeline_stack() {
         BuilderInstanceType="${BUILDER_INSTANCE_TYPE}" \
         ImageVersion="${IMAGE_VERSION}" \
         PipelineStatus="${PIPELINE_STATUS}" \
-        PrimaryModelId="${PRIMARY_MODEL_ID}" \
-        SmallModelId="${SMALL_MODEL_ID}" 2>&1
+        PrimaryModelGgufRepo="${PRIMARY_MODEL_GGUF_REPO}" \
+        PrimaryModelGgufFile="${PRIMARY_MODEL_GGUF_FILE}" \
+        SmallModelGgufRepo="${SMALL_MODEL_GGUF_REPO}" \
+        SmallModelGgufFile="${SMALL_MODEL_GGUF_FILE}" 2>&1
   )"
   rc=$?
   set -e

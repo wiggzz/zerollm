@@ -6,8 +6,8 @@ import os
 
 
 def normalize_model_name(name: str) -> str:
-    """Strip org prefix so both 'Qwen/Qwen3.5-4B' and 'Qwen3.5-4B' resolve identically."""
-    return name.split("/", 1)[-1] if "/" in name else name
+    """Return the model name unchanged; callers should use the full org/model form."""
+    return name
 
 
 def get_env(name: str, default: str | None = None) -> str:

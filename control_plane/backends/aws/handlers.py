@@ -79,12 +79,13 @@ def _json_default(value):
 
 
 def orchestrator_handler(event, context):
-    """Orchestrator Lambda — handles scale-up (async invoke) and scale-down (EventBridge).
+    """Orchestrator Lambda — handles scale-up (async invoke), scale-down, and check-health (EventBridge).
 
-    Scale-up event: {"action": "scale_up", "model": "Qwen/Qwen3-32B"}
-    Scale-down event: {"source": "schedule", "action": "scale_down"}
+    Scale-up event:     {"action": "scale_up", "model": "Qwen/Qwen3-32B"}
+    Scale-down event:   {"source": "schedule", "action": "scale_down"}
+    Check-health event: {"source": "schedule", "action": "check_health"}
     """
-    from control_plane.core.orchestrator import scale_up, scale_down
+    from control_plane.core.orchestrator import scale_up, scale_down, check_health
 
     state = _get_state_store()
     compute = _get_compute_backend()
@@ -95,6 +96,11 @@ def orchestrator_handler(event, context):
         import os
         model_name = event["model"]
         result = scale_up(model_name, state, compute, vllm_api_key=os.environ.get("VLLM_API_KEY", ""))
+        return {"statusCode": 200, "body": json.dumps(result, default=_json_default)}
+
+    elif action == "check_health":
+        import os
+        result = check_health(state, compute, api_key=os.environ.get("VLLM_API_KEY", ""))
         return {"statusCode": 200, "body": json.dumps(result, default=_json_default)}
 
     elif action == "scale_down" or event.get("source") in ("schedule", "aws.events"):

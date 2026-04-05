@@ -152,6 +152,27 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt ScaleDownSchedule.Arn
 
+  # --- EventBridge (check-health schedule) ---
+  # Polls all 'starting' instances every minute so scale_up can return immediately
+  # without blocking a Lambda invocation for the full cold-start duration.
+  CheckHealthSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      ScheduleExpression: rate(1 minute)
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt OrchestratorFunction.Arn
+          Id: CheckHealthTarget
+          Input: '{"source": "schedule", "action": "check_health"}'
+
+  CheckHealthPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref OrchestratorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CheckHealthSchedule.Arn
+
   # --- GPU Security Group ---
   GpuSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -194,7 +215,7 @@ Resources:
     Properties:
       Handler: control_plane.backends.aws.handlers.orchestrator_handler
       CodeUri: ./
-      Timeout: 900
+      Timeout: 60
       MemorySize: 256
       Environment:
         Variables:
