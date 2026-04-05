@@ -226,7 +226,7 @@ Resources:
             Type: DELETE
           Filter:
             Type: COUNT
-            Value: 3
+            Value: 2
 
 Outputs:
   ImagePipelineArn:

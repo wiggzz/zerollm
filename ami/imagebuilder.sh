@@ -382,7 +382,7 @@ print_latest_ami() {
 }
 
 prune_old_amis() {
-  local keep="${KEEP:-3}"
+  local keep="${KEEP:-2}"
   local pipeline_arn
   pipeline_arn="$(get_pipeline_arn)"
   if [[ -z "${pipeline_arn}" || "${pipeline_arn}" == "None" ]]; then
