@@ -110,6 +110,7 @@ set -euo pipefail
 cat > /etc/diogenes-model.env << 'MODELEOF'
 MODEL_NAME={model_id}
 VLLM_ARGS="{vllm_args}"
+CUDA_MODULE_LOADING=LAZY
 MODELEOF
 
 # Configure CloudWatch Logs agent to stream vLLM logs
