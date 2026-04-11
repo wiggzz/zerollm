@@ -28,8 +28,9 @@ DEFAULT_MODELS = [
         # Path to the pre-downloaded GGUF file in the AMI (must match SmallModelGgufFile).
         "model_id": "/opt/models/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
         "instance_type": "g5.xlarge",
-        # llama-server flags: full GPU offload, 128k context, Jinja template for tool calling
-        "vllm_args": "-ngl 99 --ctx-size 131072 --jinja",
+        # llama-server flags: full GPU offload, 128k context, single slot (parallel 1 so full
+        # 22GB VRAM is available for KV cache; n_parallel=4 default would OOM at 128k).
+        "vllm_args": "-ngl 99 --ctx-size 131072 --parallel 1 --jinja",
         "idle_timeout": 300,
     },
 ]
