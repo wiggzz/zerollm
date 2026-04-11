@@ -19,7 +19,8 @@ DEFAULT_MODELS = [
         # Path to the pre-downloaded GGUF file in the AMI (must match PrimaryModelGgufFile).
         "model_id": "/opt/models/Qwen_Qwen3.5-27B-Q4_K_M.gguf",
         "instance_type": "g5.2xlarge",
-        # llama-server flags: full GPU offload, 64k context, Jinja template for tool calling
+        # llama-server flags: full GPU offload, 64k context, Jinja template for tool calling.
+        # --no-mmap is set globally in start_vllm.sh (sequential EBS read vs page-fault random I/O).
         "vllm_args": "-ngl 99 --ctx-size 65536 --jinja",
         "idle_timeout": 300,
     },

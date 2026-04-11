@@ -20,7 +20,7 @@ Parameters:
     Description: Instance type used by Image Builder during AMI creation (needs network bandwidth for large downloads)
   ImageVersion:
     Type: String
-    Default: 1.3.6
+    Default: 1.3.7
     Description: Semantic version for Image Builder component/recipe (bump on recipe changes)
   PipelineStatus:
     Type: String
@@ -163,6 +163,7 @@ Resources:
                         ghcr.io/ggml-org/llama.cpp:server-cuda \
                         -m "${!MODEL_NAME}" \
                         --host 0.0.0.0 --port 8000 \
+                        --no-mmap \
                         ${!VLLM_ARGS:-}
                       EOF
                       chmod +x /opt/diogenes/start_vllm.sh
