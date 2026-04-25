@@ -23,14 +23,20 @@ Parameters:
     Default: ""
     Description: Subnet ID for GPU instances
   GpuVpcId:
-    Type: String
-    Default: ""
+    Type: AWS::EC2::VPC::Id
     Description: VPC ID for GPU instances (a security group is created by this stack)
   VllmApiKey:
     Type: String
     Default: ""
     NoEcho: true
     Description: Shared secret required by vLLM (--api-key) and forwarded by the router
+  HFTokenSecretArn:
+    Type: String
+    Default: ""
+    Description: Optional Secrets Manager secret ARN containing HF_TOKEN for model sync downloads
+
+Conditions:
+  HasHFTokenSecret: !Not [!Equals [!Ref HFTokenSecretArn, ""]]
 
 Globals:
   Function:
@@ -222,6 +228,95 @@ Resources:
       Roles:
         - !Ref GpuInstanceRole
 
+  # --- Model Sync Pipeline ---
+  ModelSyncRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ModelSyncAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/diogenes-model-sync-${Environment}"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/diogenes-model-sync-${Environment}:*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::diogenes-models-${Environment}-${AWS::AccountId}/*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub "arn:aws:s3:::diogenes-models-${Environment}-${AWS::AccountId}"
+              - Effect: Allow
+                Action:
+                  - dynamodb:DeleteItem
+                  - dynamodb:PutItem
+                  - dynamodb:Scan
+                Resource: !GetAtt ModelsTable.Arn
+              - !If
+                - HasHFTokenSecret
+                - Effect: Allow
+                  Action:
+                    - secretsmanager:GetSecretValue
+                  Resource: !Ref HFTokenSecretArn
+                - !Ref AWS::NoValue
+
+  ModelSyncProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub "diogenes-model-sync-${Environment}"
+      Description: Downloads configured GGUF models to S3 and seeds the models table
+      ServiceRole: !GetAtt ModelSyncRole.Arn
+      TimeoutInMinutes: 480
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              commands:
+                - python3 -m pip install --upgrade boto3 "huggingface-hub[hf_xet]"
+            build:
+              commands:
+                - test -n "$MODEL_SYNC_SCRIPT_S3_URI"
+                - test -n "$MODEL_MANIFEST_S3_URI"
+                - aws s3 cp "$MODEL_SYNC_SCRIPT_S3_URI" /tmp/seed_models.py
+                - aws s3 cp "$MODEL_MANIFEST_S3_URI" /tmp/models.json
+                - python3 /tmp/seed_models.py --manifest /tmp/models.json --upload --bucket "$MODELS_BUCKET" --table-name "$MODELS_TABLE" --region "$AWS_DEFAULT_REGION"
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        Image: aws/codebuild/standard:7.0
+        EnvironmentVariables:
+          - Name: MODELS_BUCKET
+            Type: PLAINTEXT
+            Value: !Ref ModelsBucket
+          - Name: MODELS_TABLE
+            Type: PLAINTEXT
+            Value: !Ref ModelsTable
+          - !If
+            - HasHFTokenSecret
+            - Name: HF_TOKEN
+              Type: SECRETS_MANAGER
+              Value: !Ref HFTokenSecretArn
+            - !Ref AWS::NoValue
+
   # --- Lambda Functions ---
   OrchestratorFunction:
     Type: AWS::Serverless::Function
@@ -368,3 +463,6 @@ Outputs:
   ModelsBucketName:
     Description: S3 bucket used for model files downloaded by GPU instances at boot
     Value: !Ref ModelsBucket
+  ModelSyncProjectName:
+    Description: CodeBuild project that syncs model manifest entries into S3 and DynamoDB
+    Value: !Ref ModelSyncProject

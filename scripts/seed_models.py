@@ -19,37 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-# Each model has:
-#   name         — canonical model name (used as DynamoDB key and in API requests)
-#   hf_repo      — HuggingFace repo to download the GGUF from
-#   hf_file      — filename within that repo
-#   model_id     — absolute path where the file will live on the GPU instance
-#   instance_type, vllm_args, idle_timeout — runtime config
-DEFAULT_MODELS = [
-    {
-        "name": "Qwen/Qwen3.5-27B",
-        "hf_repo": "bartowski/Qwen_Qwen3.5-27B-GGUF",
-        "hf_file": "Qwen_Qwen3.5-27B-Q4_K_M.gguf",
-        "model_id": "/opt/models/Qwen_Qwen3.5-27B-Q4_K_M.gguf",
-        "instance_type": "g5.2xlarge",
-        # llama-server flags: full GPU offload, 32k context, one slot to reduce cold-start
-        # memory pressure on a single A10G.
-        # --no-mmap forces sequential EBS reads vs page-fault random I/O.
-        "vllm_args": "-ngl 99 --ctx-size 32768 --parallel 1 --jinja",
-        "idle_timeout": 300,
-    },
-    {
-        "name": "Qwen/Qwen3.5-4B",
-        "hf_repo": "bartowski/Qwen_Qwen3.5-4B-GGUF",
-        "hf_file": "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
-        "model_id": "/opt/models/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
-        "instance_type": "g5.xlarge",
-        # llama-server flags: full GPU offload, 128k context, single slot (parallel 1 so full
-        # 22GB VRAM is available for KV cache; n_parallel=4 default would OOM at 128k).
-        "vllm_args": "-ngl 99 --ctx-size 131072 --parallel 1 --jinja",
-        "idle_timeout": 300,
-    },
-]
+DEFAULT_MANIFEST = REPO_ROOT / "models.json"
 
 _VLLM_ONLY_FLAGS = {
     "--max-model-len",
@@ -61,6 +31,58 @@ _VLLM_ONLY_FLAGS = {
     "--dtype",
     "--quantization",
 }
+
+
+def configure_hf_transfer_environment() -> None:
+    """Use faster Hugging Face Xet defaults while allowing caller overrides."""
+    os.environ.setdefault("HF_XET_HIGH_PERFORMANCE", "1")
+    os.environ.setdefault("HF_XET_NUM_CONCURRENT_RANGE_GETS", "64")
+
+
+def load_models(manifest_path: str | Path = DEFAULT_MANIFEST) -> list[dict]:
+    """Load model definitions from the repo manifest."""
+    path = Path(manifest_path)
+    with path.open() as f:
+        manifest = json.load(f)
+    models = manifest.get("models")
+    if not isinstance(models, list) or not models:
+        raise ValueError(f"{path}: expected a non-empty 'models' list")
+    return models
+
+
+def s3_key_for(model: dict) -> str:
+    return model.get("s3_key") or model["hf_file"]
+
+
+def seed_item_for(model: dict, bucket: str | None) -> dict:
+    item = {
+        k: v
+        for k, v in model.items()
+        if k not in ("hf_repo", "hf_file", "hf_revision")
+    }
+    if bucket:
+        item["s3_key"] = s3_key_for(model)
+    return item
+
+
+def prune_stale_models(table, model_names: set[str]) -> list[str]:
+    """Delete model rows that are no longer present in the manifest."""
+    deleted = []
+    resp = table.scan(ProjectionExpression="#name", ExpressionAttributeNames={"#name": "name"})
+    while True:
+        for item in resp.get("Items", []):
+            name = item["name"]
+            if name not in model_names:
+                table.delete_item(Key={"name": name})
+                deleted.append(name)
+        if "LastEvaluatedKey" not in resp:
+            break
+        resp = table.scan(
+            ProjectionExpression="#name",
+            ExpressionAttributeNames={"#name": "name"},
+            ExclusiveStartKey=resp["LastEvaluatedKey"],
+        )
+    return deleted
 
 
 def validate_model(model: dict) -> None:
@@ -94,14 +116,16 @@ def upload_model(model: dict, bucket: str, region: str | None) -> None:
 
     hf_repo = model["hf_repo"]
     hf_file = model["hf_file"]
+    hf_revision = model.get("hf_revision")
     name = model["name"]
+    s3_key = s3_key_for(model)
 
     s3 = boto3.client("s3", region_name=region)
 
     # Check if already uploaded — skip if so.
     try:
-        s3.head_object(Bucket=bucket, Key=hf_file)
-        print(f"  {name}: s3://{bucket}/{hf_file} already exists, skipping upload")
+        s3.head_object(Bucket=bucket, Key=s3_key)
+        print(f"  {name}: s3://{bucket}/{s3_key} already exists, skipping upload")
         return
     except s3.exceptions.ClientError:
         pass
@@ -109,10 +133,10 @@ def upload_model(model: dict, bucket: str, region: str | None) -> None:
         pass
 
     print(f"  {name}: downloading {hf_repo}/{hf_file} from HuggingFace...")
-    local_path = hf_hub_download(repo_id=hf_repo, filename=hf_file)
+    local_path = hf_hub_download(repo_id=hf_repo, filename=hf_file, revision=hf_revision)
     size_gb = Path(local_path).stat().st_size / 1024 ** 3
-    print(f"  {name}: uploading {size_gb:.1f} GB to s3://{bucket}/{hf_file}...")
-    s3.upload_file(local_path, bucket, hf_file)
+    print(f"  {name}: uploading {size_gb:.1f} GB to s3://{bucket}/{s3_key}...")
+    s3.upload_file(local_path, bucket, s3_key)
     print(f"  {name}: upload complete")
 
 
@@ -159,6 +183,16 @@ def main() -> None:
         help="S3 bucket for model files (defaults to stack ModelsBucketName when needed)",
     )
     parser.add_argument(
+        "--manifest",
+        default=os.environ.get("MODELS_MANIFEST", str(DEFAULT_MANIFEST)),
+        help="Model manifest path (default: models.json)",
+    )
+    parser.add_argument(
+        "--table-name",
+        default=os.environ.get("MODELS_TABLE"),
+        help="DynamoDB models table name (default: diogenes-models-<environment>)",
+    )
+    parser.add_argument(
         "--stack-name",
         default=os.environ.get("STACK_NAME", "diogenes"),
         help="CloudFormation stack name used to discover the model bucket (default: diogenes)",
@@ -168,6 +202,11 @@ def main() -> None:
         action="store_true",
         help="Print models that would be seeded without writing to DynamoDB or S3",
     )
+    parser.add_argument(
+        "--no-prune",
+        action="store_true",
+        help="Do not delete model rows that are absent from the manifest",
+    )
     args = parser.parse_args()
 
     uses_s3 = args.upload or args.use_s3
@@ -175,23 +214,25 @@ def main() -> None:
     if uses_s3 and not bucket:
         bucket = discover_models_bucket(args.stack_name, args.region)
 
-    table_name = f"diogenes-models-{args.environment}"
+    table_name = args.table_name or f"diogenes-models-{args.environment}"
+    models = load_models(args.manifest)
 
-    for model in DEFAULT_MODELS:
+    for model in models:
         validate_model(model)
 
     if args.dry_run:
-        print(f"Would seed {len(DEFAULT_MODELS)} model(s) into {table_name}:")
-        for model in DEFAULT_MODELS:
-            item = {k: v for k, v in model.items() if k not in ("hf_repo", "hf_file")}
-            if bucket:
-                item["s3_key"] = model["hf_file"]
+        print(f"Would seed {len(models)} model(s) into {table_name}:")
+        for model in models:
+            item = seed_item_for(model, bucket)
             print(json.dumps(item, indent=2))
+        if not args.no_prune:
+            print("Would prune model rows not present in manifest")
         return
 
     if args.upload:
-        print(f"Uploading {len(DEFAULT_MODELS)} model(s) to s3://{bucket}/...")
-        for model in DEFAULT_MODELS:
+        configure_hf_transfer_environment()
+        print(f"Uploading {len(models)} model(s) to s3://{bucket}/...")
+        for model in models:
             upload_model(model, bucket, args.region)
         print()
 
@@ -199,14 +240,17 @@ def main() -> None:
     dynamodb = boto3.resource("dynamodb", region_name=args.region)
     table = dynamodb.Table(table_name)
 
-    for model in DEFAULT_MODELS:
-        item = {k: v for k, v in model.items() if k not in ("hf_repo", "hf_file")}
-        if bucket:
-            item["s3_key"] = model["hf_file"]
+    for model in models:
+        item = seed_item_for(model, bucket)
         table.put_item(Item=item)
         print(f"Seeded: {model['name']} ({model['instance_type']})")
 
-    print(f"\nDone — {len(DEFAULT_MODELS)} model(s) written to {table_name}")
+    if not args.no_prune:
+        deleted = prune_stale_models(table, {model["name"] for model in models})
+        for name in deleted:
+            print(f"Pruned: {name}")
+
+    print(f"\nDone — {len(models)} model(s) written to {table_name}")
 
 
 if __name__ == "__main__":

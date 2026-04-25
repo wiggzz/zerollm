@@ -1,0 +1,22 @@
+{
+  "models": [
+    {
+      "name": "Qwen/Qwen3.6-27B",
+      "hf_repo": "unsloth/Qwen3.6-27B-GGUF",
+      "hf_file": "Qwen3.6-27B-Q4_K_M.gguf",
+      "model_id": "/opt/models/Qwen3.6-27B-Q4_K_M.gguf",
+      "instance_type": "g5.2xlarge",
+      "vllm_args": "-ngl 99 --ctx-size 32768 --parallel 1 --jinja",
+      "idle_timeout": 300
+    },
+    {
+      "name": "Qwen/Qwen3.5-4B",
+      "hf_repo": "bartowski/Qwen_Qwen3.5-4B-GGUF",
+      "hf_file": "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+      "model_id": "/opt/models/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+      "instance_type": "g5.xlarge",
+      "vllm_args": "-ngl 99 --ctx-size 131072 --parallel 1 --jinja",
+      "idle_timeout": 300
+    }
+  ]
+}

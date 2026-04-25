@@ -22,6 +22,8 @@ set -euo pipefail
 #   ALLOWED_EMAILS
 #   GOOGLE_CLIENT_ID
 #   AMI_BUILD_MODE (auto|latest|build, default: auto)
+#   HF_TOKEN_SECRET_ARN (optional Secrets Manager secret ARN used by CodeBuild model sync)
+#   SYNC_MODELS_ON_DEPLOY (1|0, default: 1)
 #   AMI_PIPELINE_STACK, AMI_PIPELINE_ENV, BASE_AMI_ID, BUILDER_SUBNET_ID,
 #   BUILDER_SECURITY_GROUP_ID, BUILDER_INSTANCE_TYPE, IMAGE_VERSION, PIPELINE_STATUS
 
@@ -103,6 +105,46 @@ GPU_SUBNET_ID=${GPU_SUBNET_ID}
 VLLM_API_KEY=${VLLM_API_KEY}
 EOF
   echo "Saved pinned deploy defaults to ${DEPLOY_DEFAULTS_FILE}"
+}
+
+stack_output() {
+  local output_key="$1"
+  aws cloudformation describe-stacks \
+    --region "${AWS_REGION}" \
+    --stack-name "${STACK_NAME}" \
+    --query "Stacks[0].Outputs[?OutputKey=='${output_key}'].OutputValue | [0]" \
+    --output text
+}
+
+start_model_sync() {
+  local bucket project hash prefix manifest_uri script_uri build_id
+
+  bucket="$(stack_output ModelsBucketName)"
+  project="$(stack_output ModelSyncProjectName)"
+  if [[ -z "${bucket}" || "${bucket}" == "None" || -z "${project}" || "${project}" == "None" ]]; then
+    echo "Model sync outputs not found; skipping model sync trigger"
+    return 0
+  fi
+
+  hash="$(shasum -a 256 models.json scripts/seed_models.py | shasum -a 256 | awk '{print $1}')"
+  prefix="model-sync/${hash}"
+  manifest_uri="s3://${bucket}/${prefix}/models.json"
+  script_uri="s3://${bucket}/${prefix}/seed_models.py"
+
+  aws s3 cp models.json "${manifest_uri}" --region "${AWS_REGION}" >/dev/null
+  aws s3 cp scripts/seed_models.py "${script_uri}" --region "${AWS_REGION}" >/dev/null
+
+  build_id="$(
+    aws codebuild start-build \
+      --region "${AWS_REGION}" \
+      --project-name "${project}" \
+      --environment-variables-override \
+        "name=MODEL_MANIFEST_S3_URI,value=${manifest_uri},type=PLAINTEXT" \
+        "name=MODEL_SYNC_SCRIPT_S3_URI,value=${script_uri},type=PLAINTEXT" \
+      --query "build.id" \
+      --output text
+  )"
+  echo "Started model sync build: ${build_id}"
 }
 
 latest_pipeline_ami() {
@@ -195,6 +237,9 @@ fi
 if [[ -n "${VLLM_API_KEY:-}" ]]; then
   param_overrides+=("VllmApiKey=${VLLM_API_KEY}")
 fi
+if [[ -n "${HF_TOKEN_SECRET_ARN:-}" ]]; then
+  param_overrides+=("HFTokenSecretArn=${HF_TOKEN_SECRET_ARN}")
+fi
 
 sam deploy \
   --region "${AWS_REGION}" \
@@ -202,3 +247,7 @@ sam deploy \
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
   --resolve-s3 \
   --parameter-overrides "${param_overrides[@]}"
+
+if [[ "${SYNC_MODELS_ON_DEPLOY:-1}" == "1" ]]; then
+  start_model_sync
+fi
