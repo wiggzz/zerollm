@@ -2,7 +2,12 @@
 
 Diogenes is a personal LLM backend control plane designed to scale GPU inference to zero when idle.
 
-Current status: phases 1-4 are implemented (orchestration, routing, API key auth, and cluster state).
+Current status: phases 1-4 are implemented (orchestration, routing, API key auth, and cluster state). The runtime now starts `llama-server` on GPU instances, although some internal names still say `vLLM`.
+
+Not yet implemented:
+- Google OAuth / JWT validation. Programmatic API keys with the `dio-` prefix are implemented.
+- Web UI.
+- Automatic model seeding during deploy.
 
 ## What Is Included
 
@@ -38,6 +43,8 @@ make test-unit
 make test-e2e
 ```
 
+E2E tests require Docker. LocalStack tests are skipped if Docker/Testcontainers is unavailable.
+
 ### 5. Optional: Build/Validate SAM Template
 
 ```bash
@@ -53,7 +60,8 @@ AWS_REGION=ap-southeast-2 make deploy
 
 This command automatically:
 - builds/uses a GPU AMI from the Image Builder pipeline
-- discovers `GpuSubnetId` and `GpuSecurityGroupId`
+- discovers `GpuSubnetId` values and the VPC for those subnets
+- creates the GPU security group from the SAM stack
 - runs `sam build` and `sam deploy` with parameter overrides
 
 Optional deploy environment variables:
@@ -63,13 +71,22 @@ Optional deploy environment variables:
 - `AMI_BUILD_MODE=auto` (default): use latest pipeline AMI, build if missing
 - `AMI_BUILD_MODE=latest`: require latest pipeline AMI
 - `AMI_BUILD_MODE=build`: always build a new AMI first
-- `GPU_AMI_ID`, `GPU_SUBNET_ID`, `GPU_SECURITY_GROUP_ID` to override auto-discovery
+- `GPU_AMI_ID`, `GPU_SUBNET_ID` to override auto-discovery
 - `ALLOWED_EMAILS`, `GOOGLE_CLIENT_ID` for auth configuration
 
 Network defaults behavior:
-- First deploy auto-discovers subnet/security group and writes them to `DEPLOY_DEFAULTS_FILE`.
+- First deploy auto-discovers subnet IDs and writes them to `DEPLOY_DEFAULTS_FILE`.
 - Later deploys reuse those pinned values by default for consistency.
-- Delete the file (or set explicit `GPU_SUBNET_ID` / `GPU_SECURITY_GROUP_ID`) to re-select.
+- Delete the file (or set explicit `GPU_SUBNET_ID`) to re-select.
+
+After deploy, seed model configs and create at least one API key:
+
+```bash
+AWS_REGION=ap-southeast-2 make seed-models
+AWS_REGION=ap-southeast-2 make create-api-key EMAIL=you@example.com
+```
+
+`make seed-models` can also upload configured GGUF files to the deployment S3 bucket when run with the script's `--upload --bucket <bucket>` options.
 
 ### 6. Build a GPU AMI (Image Builder)
 
@@ -107,7 +124,7 @@ Regional defaults (community-maintained, PRs welcome):
 
 - `make setup` - install runtime deps
 - `make setup-dev` - install runtime + dev deps
-- `make sync-requirements` - regenerate root `requirements.txt` from `control_plane/pyproject.toml`
+- `make sync-requirements` - regenerate root `requirements.txt` from root `pyproject.toml`
 - `make ami-build` - deploy Image Builder stack and build a GPU AMI
 - `make ami-build-deploy` - deploy/update Image Builder stack only
 - `make ami-build-start` - start a new Image Builder pipeline execution
@@ -118,10 +135,21 @@ Regional defaults (community-maintained, PRs welcome):
 - `make validate` - validate SAM template
 - `make build` - SAM build
 - `make deploy` - one-command auto deploy (AMI + network param auto-resolution + SAM deploy)
+- `make seed-models` - seed default model configuration into DynamoDB
+- `make create-api-key EMAIL=you@example.com` - create a programmatic API key
+- `make status` - print instance records from DynamoDB
+- `make logs` - show EC2 state, health, and instance journal logs via SSM
 
 Dependency note:
-- `control_plane/pyproject.toml` is the source of truth.
+- Root `pyproject.toml` is the source of truth.
 - `make build` runs `make sync-requirements` first so SAM packaging stays in sync.
+
+## Usage Notes
+
+- All API Gateway routes are protected by the Lambda authorizer. Use `Authorization: Bearer <dio-key>` with keys created by `make create-api-key`.
+- First inference for a cold model returns `503` with `Retry-After`; the router triggers async scale-up and clients should retry.
+- GPU instances must expose port `8000`; the generated security group currently opens that port publicly.
+- The default model seed data points at GGUF model files for `llama-server`. Ensure the files exist in the AMI or upload them to the model bucket and seed `s3_key`.
 
 ## Repository Layout
 

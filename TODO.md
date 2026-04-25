@@ -7,6 +7,11 @@ when there's spare time.
 
 ## Bugs / Correctness
 
+- **`proxy_request` assumes every non-SSE upstream response is JSON** (`router.py:29`).
+  If `llama-server` returns an HTML/text error page or an empty body, `response.json()`
+  raises and the router converts the upstream response into a generic 502. Preserve
+  the upstream status and return a safe text/error payload when JSON parsing fails.
+
 - **`manual_scale down` skips actual EC2 termination** (`cluster.py:75`).
   It calls `state.update_instance(status="terminated")` directly without calling
   `compute.terminate()`. The instance is marked gone in DynamoDB but keeps running
@@ -35,9 +40,18 @@ when there's spare time.
   Low risk in practice since vllm_args comes from trusted seed data, but worth
   hardening.
 
+- **`save_pinned_defaults` writes shell-unquoted values** (`deploy.sh`).
+  `GPU_SUBNET_ID` is currently a comma-separated list and `VLLM_API_KEY` is hex, so
+  this happens to work. If future values contain spaces, quotes, or shell metacharacters,
+  sourcing the defaults file will break or execute unintended syntax. Write values
+  with `printf '%q'` or use a simple dotenv parser that does not execute the file.
+
 ---
 
 ## Missing Tests
+
+- **`proxy_request` has no test for non-JSON error responses**. Add coverage for
+  upstream 500/502 text bodies so JSON decoding failures don't mask the real status.
 
 - **`check_health` is not tested when an instance has no `provider_instance_id`**
   (placeholder-only record before EC2 call returns). The timeout path skips the
@@ -63,6 +77,10 @@ when there's spare time.
 ---
 
 ## Design / Encapsulation
+
+- **`manual_scale down` cannot terminate real instances by design** because the
+  cluster API only receives `state` and `trigger_scale_up`, not `compute`. Fixing the
+  bug above requires changing the core signature and the AWS handler dependency wiring.
 
 - **`trigger_scale_up` is a bare callable passed everywhere** (`router.py`,
   `cluster.py`, tests). It's effectively a thin wrapper around a Lambda async invoke.
@@ -116,6 +134,12 @@ when there's spare time.
 
 ## UX / Client Experience
 
+- **README deploy flow still requires manual follow-up steps**. `make deploy` creates
+  infrastructure but does not seed model configs or create an API key. A first-time
+  user can deploy successfully and still get empty `/v1/models` plus authorizer
+  failures. Consider a guided bootstrap target that runs deploy, seeds models, prints
+  `ApiUrl`, and creates or imports an initial API key.
+
 - **Cold-start 503 message is a flat string** (`router.py:59`). The llama-server
   `/health` endpoint returns `{"status": "loading model"}` while loading and
   `{"status": "ok"}` when ready. Better approach:
@@ -130,14 +154,21 @@ when there's spare time.
 
 ## Observability / Operations
 
+- **GPU inference port is exposed to the public internet** (`template.yaml`).
+  `GpuSecurityGroup` allows `0.0.0.0/0` to port 8000. The shared `VLLM_API_KEY` helps,
+  but public instance exposure is still a large operational footgun. Prefer putting
+  the router Lambda in the VPC and restricting ingress to the Lambda security group,
+  or at least make allowed CIDRs an explicit deploy parameter.
+
 - **No CloudWatch alarm on instance startup failures**. If `check_health` terminates
   an instance after timeout, it logs an error but there's no metric or alarm. An
   operator won't know a model is stuck in a boot failure loop until a user reports 503s.
 
 - **`make status` shows all instances including terminated ones** from DynamoDB.
-  Old stale records accumulate. The cluster-status script filters to `status != terminated`
-  in its Python, but the `cluster.py` `get_cluster_state` also filters them — these
-  two should be kept in sync. Consider a periodic cleanup of old terminated records.
+  `cluster.py` filters terminated instances out of the API response, and
+  `instance-logs.sh` filters them out before showing logs, but `cluster-status.sh`
+  prints every DynamoDB row. Keep these views consistent and consider a periodic
+  cleanup of old terminated records.
 
 - **No way to see check_health invocation results** beyond CloudWatch Logs. A simple
   `/api/cluster` response field showing "last_health_check_at" would be useful.
@@ -145,6 +176,12 @@ when there's spare time.
 ---
 
 ## Simplifications
+
+- **README, DESIGN, and PLAN describe different generations of the system**.
+  README is closest to current behavior, but DESIGN/PLAN still mention SQS,
+  synchronous health polling during scale-up, vLLM-first model args, Google OAuth,
+  and a web UI as if they exist. Either mark DESIGN/PLAN as historical or refresh
+  them so new contributors don't implement against stale architecture.
 
 - **`normalize_model_name` is now a no-op** but is still imported and called in
   `orchestrator.py` and `router.py`. Delete the function and the call sites.
