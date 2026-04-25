@@ -53,15 +53,16 @@ class EC2ComputeBackend:
                     SubnetId=subnet_id,
                     IamInstanceProfile={"Arn": self._instance_profile_arn},
                     UserData=user_data,
-                    # Max gp3 throughput (1000 MB/s vs 125 MB/s baseline) at ~$0.048/hr extra.
-                    # Cuts tensor load time from ~22s to ~3s — worth it vs ~$1/hr instance cost.
+                    # Model downloads and llama.cpp --no-mmap loads are mostly sequential.
+                    # Throughput matters more than IOPS, and g5.xlarge/g5.2xlarge EBS
+                    # bandwidth caps below 500 MiB/s, so 16k IOPS / 1000 MiB/s is wasted.
                     BlockDeviceMappings=[
                         {
                             "DeviceName": "/dev/sda1",
                             "Ebs": {
                                 "VolumeType": "gp3",
-                                "Throughput": 1000,
-                                "Iops": 16000,
+                                "Throughput": 500,
+                                "Iops": 3000,
                             },
                         }
                     ],
@@ -123,22 +124,34 @@ class EC2ComputeBackend:
         s3_key = model_config.get("s3_key", "")
         if self._models_bucket and s3_key:
             fetch_model = (
-                f"echo 'Downloading {s3_key} from s3://{self._models_bucket}/...'\n"
+                f"log_step 'model_download_start bucket={self._models_bucket} key={s3_key}'\n"
                 f"mkdir -p /opt/models\n"
                 f"aws s3 cp s3://{self._models_bucket}/{s3_key} {model_id} --no-progress\n"
-                f"echo 'Download complete.'"
+                f"sync {model_id}\n"
+                f"log_step 'model_download_done path={model_id} size_bytes='$(stat -c%s {model_id})"
             )
         else:
-            fetch_model = f"# Model file expected at {model_id} (pre-baked in AMI)"
+            fetch_model = (
+                f"log_step 'model_prebaked_expected path={model_id}'\n"
+                f"test -s {model_id}\n"
+                f"log_step 'model_prebaked_found path={model_id} size_bytes='$(stat -c%s {model_id})"
+            )
 
         return f"""#!/bin/bash
 set -euo pipefail
+
+log_step() {{
+  printf '%s %s\\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a /var/log/diogenes-coldstart.log /var/log/vllm.log
+}}
+
+log_step 'cloud_init_start model={model_name}'
 
 # Write model config
 cat > /etc/diogenes-model.env << 'MODELEOF'
 MODEL_NAME={model_id}
 VLLM_ARGS="{vllm_args}"
 MODELEOF
+log_step 'model_env_written model_id={model_id}'
 
 # Configure CloudWatch Logs agent to stream vLLM logs
 INSTANCE_ID=$(curl -sf --connect-timeout 3 http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || echo "unknown")
@@ -156,6 +169,13 @@ if command -v /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl >
             "log_stream_name": "$INSTANCE_ID/{model_name_safe}",
             "timezone": "UTC",
             "retention_in_days": 7
+          }},
+          {{
+            "file_path": "/var/log/diogenes-coldstart.log",
+            "log_group_name": "/diogenes/coldstart",
+            "log_stream_name": "$INSTANCE_ID/{model_name_safe}",
+            "timezone": "UTC",
+            "retention_in_days": 7
           }}
         ]
       }}
@@ -167,9 +187,12 @@ CWEOF
     -a fetch-config -m ec2 -s \
     -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json || true
 fi
+log_step 'cloudwatch_agent_configured'
 
 {fetch_model}
 
 # Start vLLM (assumes AMI has llama-server configured via systemd)
+log_step 'llama_service_start'
 systemctl start vllm
+log_step 'cloud_init_done'
 """

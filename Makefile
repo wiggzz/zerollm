@@ -1,10 +1,11 @@
-.PHONY: setup setup-dev sync-requirements ami-build ami-build-deploy ami-build-start ami-build-latest ami-prune test test-unit test-e2e build deploy validate clean seed-models create-api-key logs status
+.PHONY: setup setup-dev sync-requirements ami-build ami-build-deploy ami-build-start ami-build-latest ami-prune test test-unit test-e2e build deploy validate clean seed-models seed-models-upload create-api-key logs status
 
 STACK_NAME   ?= diogenes
 ENVIRONMENT  ?= dev
 AWS_REGION   ?= $(shell aws configure get region 2>/dev/null)
 MODEL        ?=
 LINES        ?= 60
+MODELS_BUCKET ?=
 
 setup:
 	uv sync
@@ -48,7 +49,10 @@ validate:
 	sam validate
 
 seed-models:
-	AWS_REGION="$(AWS_REGION)" uv run --no-sync python scripts/seed_models.py
+	AWS_REGION="$(AWS_REGION)" STACK_NAME="$(STACK_NAME)" uv run --no-sync python scripts/seed_models.py
+
+seed-models-upload:
+	AWS_REGION="$(AWS_REGION)" STACK_NAME="$(STACK_NAME)" MODELS_BUCKET="$(MODELS_BUCKET)" uv run --extra upload python scripts/seed_models.py --upload
 
 create-api-key:
 	@test -n "$(EMAIL)" || (echo "Usage: make create-api-key EMAIL=you@example.com" && exit 1)

@@ -12,6 +12,9 @@ dev = [
     "pytest>=8.0",
     "testcontainers[localstack]>=4.0",
 ]
+upload = [
+    "huggingface-hub>=0.23",
+]
 
 [tool.setuptools.packages.find]
 include = ["control_plane*"]

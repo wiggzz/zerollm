@@ -365,3 +365,6 @@ Outputs:
     Value: !Sub "https://${DiogenesApi}.execute-api.${AWS::Region}.amazonaws.com"
   OrchestratorFunctionName:
     Value: !Ref OrchestratorFunction
+  ModelsBucketName:
+    Description: S3 bucket used for model files downloaded by GPU instances at boot
+    Value: !Ref ModelsBucket

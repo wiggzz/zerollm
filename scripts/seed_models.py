@@ -3,7 +3,7 @@
 
 Usage:
   python3 scripts/seed_models.py                          # seed DynamoDB only
-  python3 scripts/seed_models.py --upload --bucket NAME   # download from HF, upload to S3, seed DynamoDB
+  python3 scripts/seed_models.py --upload                 # download from HF, upload to stack bucket, seed DynamoDB
   python3 scripts/seed_models.py --dry-run                # print what would be seeded
 """
 
@@ -32,9 +32,10 @@ DEFAULT_MODELS = [
         "hf_file": "Qwen_Qwen3.5-27B-Q4_K_M.gguf",
         "model_id": "/opt/models/Qwen_Qwen3.5-27B-Q4_K_M.gguf",
         "instance_type": "g5.2xlarge",
-        # llama-server flags: full GPU offload, 64k context, Jinja template for tool calling.
+        # llama-server flags: full GPU offload, 32k context, one slot to reduce cold-start
+        # memory pressure on a single A10G.
         # --no-mmap forces sequential EBS reads vs page-fault random I/O.
-        "vllm_args": "-ngl 99 --ctx-size 65536 --jinja",
+        "vllm_args": "-ngl 99 --ctx-size 32768 --parallel 1 --jinja",
         "idle_timeout": 300,
     },
     {
@@ -115,6 +116,21 @@ def upload_model(model: dict, bucket: str, region: str | None) -> None:
     print(f"  {name}: upload complete")
 
 
+def discover_models_bucket(stack_name: str, region: str | None) -> str:
+    """Return the deployed stack's ModelsBucketName output."""
+    import boto3
+
+    cf = boto3.client("cloudformation", region_name=region)
+    resp = cf.describe_stacks(StackName=stack_name)
+    outputs = resp["Stacks"][0].get("Outputs", [])
+    for output in outputs:
+        if output.get("OutputKey") == "ModelsBucketName":
+            return output["OutputValue"]
+    raise RuntimeError(
+        f"Stack {stack_name!r} does not expose ModelsBucketName. Deploy the latest template first."
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed Diogenes model configurations into DynamoDB")
     parser.add_argument(
@@ -133,9 +149,19 @@ def main() -> None:
         help="Download models from HuggingFace and upload to S3 before seeding DynamoDB",
     )
     parser.add_argument(
+        "--use-s3",
+        action="store_true",
+        help="Write s3_key into model configs without uploading files",
+    )
+    parser.add_argument(
         "--bucket",
         default=os.environ.get("MODELS_BUCKET"),
-        help="S3 bucket for model files (required with --upload, or set MODELS_BUCKET)",
+        help="S3 bucket for model files (defaults to stack ModelsBucketName when needed)",
+    )
+    parser.add_argument(
+        "--stack-name",
+        default=os.environ.get("STACK_NAME", "diogenes"),
+        help="CloudFormation stack name used to discover the model bucket (default: diogenes)",
     )
     parser.add_argument(
         "--dry-run",
@@ -144,8 +170,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    if args.upload and not args.bucket:
-        parser.error("--bucket (or MODELS_BUCKET env var) is required with --upload")
+    uses_s3 = args.upload or args.use_s3
+    bucket = args.bucket or None
+    if uses_s3 and not bucket:
+        bucket = discover_models_bucket(args.stack_name, args.region)
 
     table_name = f"diogenes-models-{args.environment}"
 
@@ -156,15 +184,15 @@ def main() -> None:
         print(f"Would seed {len(DEFAULT_MODELS)} model(s) into {table_name}:")
         for model in DEFAULT_MODELS:
             item = {k: v for k, v in model.items() if k not in ("hf_repo", "hf_file")}
-            if args.bucket:
+            if bucket:
                 item["s3_key"] = model["hf_file"]
             print(json.dumps(item, indent=2))
         return
 
     if args.upload:
-        print(f"Uploading {len(DEFAULT_MODELS)} model(s) to s3://{args.bucket}/...")
+        print(f"Uploading {len(DEFAULT_MODELS)} model(s) to s3://{bucket}/...")
         for model in DEFAULT_MODELS:
-            upload_model(model, args.bucket, args.region)
+            upload_model(model, bucket, args.region)
         print()
 
     import boto3
@@ -173,7 +201,7 @@ def main() -> None:
 
     for model in DEFAULT_MODELS:
         item = {k: v for k, v in model.items() if k not in ("hf_repo", "hf_file")}
-        if args.bucket:
+        if bucket:
             item["s3_key"] = model["hf_file"]
         table.put_item(Item=item)
         print(f"Seeded: {model['name']} ({model['instance_type']})")
