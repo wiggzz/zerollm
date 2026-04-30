@@ -20,6 +20,10 @@ VLLM_PORT = SERVER_PORT  # backwards-compat alias
 
 # Maximum time (seconds) to wait for an instance to become healthy before terminating.
 MAX_START_SECONDS = 1200  # 20 minutes
+DEFAULT_IDLE_TIMEOUT_SECONDS = 300
+DEFAULT_WARM_TIMEOUT_SECONDS = 8 * 60 * 60  # 8 hours
+DEFAULT_MAX_REQUEST_SECONDS = 20 * 60
+STOPPING_RECOVERY_SECONDS = 5 * 60
 
 
 def scale_up(
@@ -39,20 +43,62 @@ def scale_up(
     # Idempotency: skip if already starting or ready
     existing = state.list_instances(model=model_name, status="starting")
     existing += state.list_instances(model=model_name, status="ready")
+    existing += state.list_instances(model=model_name, status="busy")
     if existing:
         logger.info("Instance already exists for %s: %s", model_name, existing[0]["instance_id"])
         return existing[0]
-
-    # Clean up any stale terminated record so put_instance_if_absent can succeed.
-    stale = state.list_instances(model=model_name, status="terminated")
-    for inst in stale:
-        state.delete_instance(inst["instance_id"])
 
     model_config = state.get_model_config(model_name)
     if model_config is None:
         raise ValueError(f"Unknown model: {model_name}")
 
     now = int(time.time())
+
+    stopped = state.list_instances(model=model_name, status="stopped")
+    if stopped:
+        warm = stopped[0]
+        if _warm_instance_expired(warm, now):
+            provider_id = warm.get("provider_instance_id")
+            if provider_id:
+                compute.terminate(provider_id)
+            state.update_instance(warm["instance_id"], status="terminated")
+        else:
+            provider_id = warm.get("provider_instance_id")
+            if not provider_id:
+                state.update_instance(warm["instance_id"], status="terminated")
+            else:
+                logger.info("Starting warm instance %s for model %s", provider_id, model_name)
+                state.update_instance(
+                    warm["instance_id"],
+                    status="starting",
+                    ip="",
+                    launched_at=now,
+                    last_request_at=now,
+                    started_at=now,
+                )
+                try:
+                    ip = compute.start(provider_id)
+                except Exception:
+                    logger.exception("Failed to start warm instance %s", provider_id)
+                    state.update_instance(warm["instance_id"], status="stopped")
+                    raise
+                state.update_instance(warm["instance_id"], ip=ip)
+                warm.update(
+                    {
+                        "status": "starting",
+                        "ip": ip,
+                        "launched_at": now,
+                        "last_request_at": now,
+                        "started_at": now,
+                    }
+                )
+                return warm
+
+    # Clean up any stale terminated record so put_instance_if_absent can succeed.
+    stale = state.list_instances(model=model_name, status="terminated")
+    for inst in stale:
+        state.delete_instance(inst["instance_id"])
+
     placeholder_id = f"model#{model_name}"
     placeholder = {
         "instance_id": placeholder_id,
@@ -69,6 +115,7 @@ def scale_up(
     if not claimed:
         existing = state.list_instances(model=model_name, status="starting")
         existing += state.list_instances(model=model_name, status="ready")
+        existing += state.list_instances(model=model_name, status="busy")
         if existing:
             return existing[0]
         return placeholder
@@ -99,38 +146,191 @@ def scale_up(
     return placeholder
 
 
-def scale_down(
-    state: StateStore,
-    compute: ComputeBackend,
-) -> list[str]:
-    """Terminate idle instances past their idle timeout.
-
-    Returns list of terminated instance IDs.
-    """
-    terminated = []
+def scale_down(state: StateStore, compute: ComputeBackend) -> dict[str, list[str]]:
+    """Move idle instances to warm state, then terminate expired warm instances."""
+    results: dict[str, list[str]] = {"stopping": [], "stopped": [], "terminated": []}
     now = int(time.time())
+
+    _recover_stopping_instances(state, compute, now)
 
     ready_instances = state.list_instances(status="ready")
     for inst in ready_instances:
         model_config = state.get_model_config(inst["model"])
-        idle_timeout = 300  # default
+        idle_timeout = DEFAULT_IDLE_TIMEOUT_SECONDS
+        warm_timeout = DEFAULT_WARM_TIMEOUT_SECONDS
         if model_config:
-            idle_timeout = int(model_config.get("idle_timeout", 300))
+            idle_timeout = int(model_config.get("idle_timeout", DEFAULT_IDLE_TIMEOUT_SECONDS))
+            warm_timeout = int(model_config.get("warm_timeout", DEFAULT_WARM_TIMEOUT_SECONDS))
 
         last_request = int(inst.get("last_request_at", inst.get("launched_at", 0)))
         if now - last_request > idle_timeout:
-            logger.info(
-                "Terminating idle instance %s (model=%s, idle=%ds)",
-                inst["instance_id"],
-                inst["model"],
-                now - last_request,
-            )
-            state.update_instance(inst["instance_id"], status="draining")
-            compute.terminate(inst.get("provider_instance_id", inst["instance_id"]))
-            state.update_instance(inst["instance_id"], status="terminated")
-            terminated.append(inst["instance_id"])
+            provider_id = inst.get("provider_instance_id", inst["instance_id"])
+            provider_status = {}
+            try:
+                provider_status = compute.instance_status(provider_id)
+            except Exception:
+                logger.exception("Failed to inspect idle instance %s", provider_id)
 
-    return terminated
+            provider_state = provider_status.get("state", "")
+            if provider_state == "stopped":
+                state.update_instance(
+                    inst["instance_id"],
+                    status="stopped",
+                    previous_ip=inst.get("ip", ""),
+                    ip="",
+                    stopped_at=now,
+                    warm_expires_at=now + warm_timeout,
+                )
+                results["stopped"].append(inst["instance_id"])
+                continue
+            if provider_state == "stopping":
+                state.update_instance(
+                    inst["instance_id"],
+                    status="stopping",
+                    stopping_at=now,
+                    warm_expires_at=now + warm_timeout,
+                )
+                results["stopping"].append(inst["instance_id"])
+                continue
+
+            if warm_timeout > 0:
+                logger.info(
+                    "Stopping idle instance %s (model=%s, idle=%ds, warm_timeout=%ds)",
+                    inst["instance_id"],
+                    inst["model"],
+                    now - last_request,
+                    warm_timeout,
+                )
+                state.update_instance(
+                    inst["instance_id"],
+                    status="stopping",
+                    stopping_at=now,
+                    warm_expires_at=now + warm_timeout,
+                )
+                try:
+                    compute.stop(provider_id)
+                except Exception:
+                    logger.exception("Failed to stop idle instance %s", provider_id)
+                    state.update_instance(
+                        inst["instance_id"],
+                        status="ready",
+                        last_request_at=now,
+                        stop_error_at=now,
+                    )
+                    raise
+                results["stopping"].append(inst["instance_id"])
+            else:
+                logger.info(
+                    "Terminating idle instance %s (model=%s, idle=%ds)",
+                    inst["instance_id"],
+                    inst["model"],
+                    now - last_request,
+                )
+                state.update_instance(inst["instance_id"], status="draining")
+                compute.terminate(provider_id)
+                state.update_instance(inst["instance_id"], status="terminated")
+                results["terminated"].append(inst["instance_id"])
+
+    for inst in state.list_instances(status="busy"):
+        model_config = state.get_model_config(inst["model"])
+        max_request_seconds = DEFAULT_MAX_REQUEST_SECONDS
+        if model_config:
+            max_request_seconds = int(
+                model_config.get("max_request_seconds", DEFAULT_MAX_REQUEST_SECONDS)
+            )
+        active_since = _oldest_active_request_start(inst, now)
+        if _active_requests_expired(inst, now, max_request_seconds):
+            logger.warning(
+                "Clearing stale active request marker for %s (model=%s, active=%ds)",
+                inst["instance_id"],
+                inst.get("model"),
+                now - active_since,
+            )
+            state.update_instance(
+                inst["instance_id"],
+                status="ready",
+                last_request_at=now,
+            )
+            state.remove_instance_fields(inst["instance_id"], "active_request_starts")
+
+    for inst in state.list_instances(status="stopped"):
+        if not _warm_instance_expired(inst, now):
+            continue
+        provider_id = inst.get("provider_instance_id")
+        logger.info("Terminating expired warm instance %s (model=%s)", inst["instance_id"], inst.get("model"))
+        if provider_id:
+            compute.terminate(provider_id)
+        state.update_instance(inst["instance_id"], status="terminated")
+        results["terminated"].append(inst["instance_id"])
+
+    return results
+
+
+def _recover_stopping_instances(state: StateStore, compute: ComputeBackend, now: int) -> None:
+    for inst in state.list_instances(status="stopping"):
+        provider_id = inst.get("provider_instance_id")
+        if not provider_id:
+            state.update_instance(inst["instance_id"], status="terminated")
+            continue
+
+        try:
+            provider_status = compute.instance_status(provider_id)
+        except Exception:
+            logger.exception("Failed to inspect stopping instance %s", provider_id)
+            continue
+
+        provider_state = provider_status.get("state", "")
+        if provider_state == "stopped":
+            state.update_instance(
+                inst["instance_id"],
+                status="stopped",
+                previous_ip=inst.get("ip", ""),
+                ip="",
+                stopped_at=now,
+            )
+        elif provider_state in {"terminated", "shutting-down"}:
+            state.update_instance(inst["instance_id"], status="terminated")
+        elif now - int(inst.get("stopping_at", now)) > STOPPING_RECOVERY_SECONDS:
+            logger.warning(
+                "Recovering stale stopping instance %s with provider state %s",
+                inst["instance_id"],
+                provider_state,
+            )
+            state.update_instance(inst["instance_id"], status="ready", last_request_at=now)
+
+
+def _warm_instance_expired(inst: dict, now: int) -> bool:
+    expires_at = int(inst.get("warm_expires_at", 0))
+    return expires_at > 0 and now >= expires_at
+
+
+def _oldest_active_request_start(inst: dict, default: int) -> int:
+    starts = inst.get("active_request_starts")
+    if not starts:
+        return int(inst.get("active_request_started_at", inst.get("last_request_at", default)))
+
+    parsed = []
+    for token in starts:
+        try:
+            parsed.append(int(str(token).split(":", 1)[0]))
+        except (TypeError, ValueError):
+            continue
+    return min(parsed) if parsed else default
+
+
+def _active_requests_expired(inst: dict, now: int, max_request_seconds: int) -> bool:
+    starts = inst.get("active_request_starts")
+    if not starts:
+        active_since = int(inst.get("active_request_started_at", inst.get("last_request_at", now)))
+        return now - active_since > max_request_seconds
+
+    parsed = []
+    for token in starts:
+        try:
+            parsed.append(int(str(token).split(":", 1)[0]))
+        except (TypeError, ValueError):
+            continue
+    return bool(parsed) and all(now - start > max_request_seconds for start in parsed)
 
 
 def check_health(

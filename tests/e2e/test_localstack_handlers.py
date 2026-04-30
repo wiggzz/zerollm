@@ -56,7 +56,7 @@ def test_localstack_cluster_and_scale_down_flow(localstack_env, mock_vllm, monke
     monkeypatch.setattr(orchestrator.time, "time", lambda: 10)
 
     scaled_down = orchestrator.scale_down(state, compute)
-    assert scaled_down == [inst["instance_id"]]
+    assert scaled_down == {"stopping": [inst["instance_id"]], "stopped": [], "terminated": []}
 
 
 def test_localstack_keys_and_authorizer_flow(localstack_env, monkeypatch):

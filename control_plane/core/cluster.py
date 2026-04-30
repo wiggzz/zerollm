@@ -18,15 +18,18 @@ def get_cluster_state(state: StateStore) -> dict:
             for inst in instances
             if inst.get("model") == name and inst.get("status") != "terminated"
         ]
-        ready_count = sum(1 for inst in model_instances if inst.get("status") == "ready")
+        ready_count = sum(1 for inst in model_instances if inst.get("status") in {"ready", "busy"})
         starting_count = sum(
-            1 for inst in model_instances if inst.get("status") in {"starting", "draining"}
+            1 for inst in model_instances if inst.get("status") in {"starting", "draining", "stopping"}
         )
+        warm_count = sum(1 for inst in model_instances if inst.get("status") == "stopped")
 
         if ready_count > 0:
             status = "ready"
         elif starting_count > 0:
             status = "warming"
+        elif warm_count > 0:
+            status = "warm"
         else:
             status = "cold"
 
@@ -38,6 +41,7 @@ def get_cluster_state(state: StateStore) -> dict:
                 "status": status,
                 "ready_count": ready_count,
                 "starting_count": starting_count,
+                "warm_count": warm_count,
                 "instance_count": len(model_instances),
             }
         )

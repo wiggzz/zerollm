@@ -28,6 +28,6 @@ def test_full_cold_start_inference_and_scale_down_cycle(mock_vllm, monkeypatch):
     state.update_instance(instance["instance_id"], last_request_at=0)
     monkeypatch.setattr(orchestrator.time, "time", lambda: 10)
 
-    terminated = orchestrator.scale_down(state, compute)
-    assert terminated == ["model#Qwen/Qwen3-32B"]
-    assert state.get_instance("model#Qwen/Qwen3-32B")["status"] == "terminated"
+    result = orchestrator.scale_down(state, compute)
+    assert result == {"stopping": ["model#Qwen/Qwen3-32B"], "stopped": [], "terminated": []}
+    assert state.get_instance("model#Qwen/Qwen3-32B")["status"] == "stopping"

@@ -105,8 +105,8 @@ def orchestrator_handler(event, context):
         return {"statusCode": 200, "body": json.dumps(result, default=_json_default)}
 
     elif action == "scale_down" or event.get("source") in ("schedule", "aws.events"):
-        terminated = scale_down(state, compute)
-        return {"statusCode": 200, "body": json.dumps({"terminated": terminated}, default=_json_default)}
+        result = scale_down(state, compute)
+        return {"statusCode": 200, "body": json.dumps(result, default=_json_default)}
 
     else:
         logger.warning("Unknown orchestrator event: %s", event)
