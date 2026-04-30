@@ -33,6 +33,10 @@ class StateStore(Protocol):
         """Update specific fields on an instance record."""
         ...
 
+    def remove_instance_fields(self, instance_id: str, *fields: str) -> None:
+        """Remove fields from an instance record."""
+        ...
+
     def put_instance_if_absent(self, instance: dict) -> bool:
         """Create an instance record if its primary key does not already exist."""
         ...
@@ -71,13 +75,25 @@ class StateStore(Protocol):
 
 
 class ComputeBackend(Protocol):
-    """Launch and terminate GPU instances."""
+    """Launch, stop, start, and terminate GPU instances."""
 
     def launch(self, model_config: dict) -> tuple[str, str]:
         """Launch an instance for the given model config.
 
         Returns (instance_id, ip_address).
         """
+        ...
+
+    def start(self, instance_id: str) -> str:
+        """Start a stopped instance and return its current IP address."""
+        ...
+
+    def stop(self, instance_id: str) -> None:
+        """Stop an instance by ID while preserving its EBS volumes."""
+        ...
+
+    def instance_status(self, instance_id: str) -> dict:
+        """Return provider instance status fields such as state and IP address."""
         ...
 
     def terminate(self, instance_id: str) -> None:

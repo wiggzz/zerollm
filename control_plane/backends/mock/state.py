@@ -33,12 +33,22 @@ class InMemoryStateStore:
             raise KeyError(f"Instance {instance_id} not found")
         inst.update(fields)
 
+    def remove_instance_fields(self, instance_id: str, *fields: str) -> None:
+        inst = self._instances.get(instance_id)
+        if inst is None:
+            raise KeyError(f"Instance {instance_id} not found")
+        for field in fields:
+            inst.pop(field, None)
+
     def put_instance_if_absent(self, instance: dict) -> bool:
         instance_id = instance["instance_id"]
         if instance_id in self._instances:
             return False
         self._instances[instance_id] = instance
         return True
+
+    def delete_instance(self, instance_id: str) -> None:
+        self._instances.pop(instance_id, None)
 
     # --- Models ---
 

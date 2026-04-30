@@ -80,6 +80,17 @@ class DynamoDBStateStore:
         )
 
 
+    def remove_instance_fields(self, instance_id: str, *fields: str) -> None:
+        if not fields:
+            return
+
+        names = {f"#n{i}": field for i, field in enumerate(fields)}
+        self._instances.update_item(
+            Key={"instance_id": instance_id},
+            UpdateExpression="REMOVE " + ", ".join(names.keys()),
+            ExpressionAttributeNames=names,
+        )
+
 
     def delete_instance(self, instance_id: str) -> None:
         self._instances.delete_item(Key={"instance_id": instance_id})

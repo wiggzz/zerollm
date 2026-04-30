@@ -109,6 +109,36 @@ class EC2ComputeBackend:
     def terminate(self, instance_id: str) -> None:
         self._ec2.terminate_instances(InstanceIds=[instance_id])
 
+    def start(self, instance_id: str) -> str:
+        """Start a stopped EC2 instance and return its public IP."""
+        self._ec2.start_instances(InstanceIds=[instance_id])
+        waiter = self._ec2.get_waiter("instance_running")
+        waiter.wait(InstanceIds=[instance_id])
+        return self._public_ip(instance_id)
+
+    def stop(self, instance_id: str) -> None:
+        self._ec2.stop_instances(InstanceIds=[instance_id])
+
+    def instance_status(self, instance_id: str) -> dict:
+        desc = self._ec2.describe_instances(InstanceIds=[instance_id])
+        instance = desc["Reservations"][0]["Instances"][0]
+        return {
+            "state": instance["State"]["Name"],
+            "ip": instance.get("PublicIpAddress", ""),
+        }
+
+    def _public_ip(self, instance_id: str) -> str:
+        import time
+
+        public_ip = ""
+        for _ in range(10):
+            desc = self._ec2.describe_instances(InstanceIds=[instance_id])
+            public_ip = desc["Reservations"][0]["Instances"][0].get("PublicIpAddress", "")
+            if public_ip:
+                break
+            time.sleep(2)
+        return public_ip
+
     def _build_user_data(self, model_config: dict) -> str:
         """Build the cloud-init script that starts llama-server."""
         vllm_args = model_config.get("vllm_args", "")
@@ -126,8 +156,12 @@ class EC2ComputeBackend:
             fetch_model = (
                 f"log_step 'model_download_start bucket={self._models_bucket} key={s3_key}'\n"
                 f"mkdir -p /opt/models\n"
-                f"aws s3 cp s3://{self._models_bucket}/{s3_key} {model_id} --no-progress\n"
-                f"sync {model_id}\n"
+                f"if test -s {model_id}; then\n"
+                f"  log_step 'model_download_skip_existing path={model_id} size_bytes='$(stat -c%s {model_id})\n"
+                f"else\n"
+                f"  aws s3 cp s3://{self._models_bucket}/{s3_key} {model_id} --no-progress\n"
+                f"  sync {model_id}\n"
+                f"fi\n"
                 f"log_step 'model_download_done path={model_id} size_bytes='$(stat -c%s {model_id})"
             )
         else:
@@ -193,6 +227,7 @@ log_step 'cloudwatch_agent_configured'
 
 # Start vLLM (assumes AMI has llama-server configured via systemd)
 log_step 'llama_service_start'
+systemctl enable vllm
 systemctl start vllm
 log_step 'cloud_init_done'
 """

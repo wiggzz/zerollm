@@ -59,5 +59,11 @@ def test_compute_backend_launch_and_terminate(compute):
     assert ip == "127.0.0.1"
     assert len(compute.launched) == 1
 
+    assert compute.start(instance_id) == "127.0.0.1"
+    assert instance_id in compute.started
+
+    compute.stop(instance_id)
+    assert instance_id in compute.stopped
+
     compute.terminate(instance_id)
     assert instance_id in compute.terminated
