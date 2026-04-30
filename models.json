@@ -6,8 +6,9 @@
       "hf_file": "Qwen3.6-27B-Q4_K_M.gguf",
       "model_id": "/opt/models/Qwen3.6-27B-Q4_K_M.gguf",
       "instance_type": "g6e.2xlarge",
-      "vllm_args": "-ngl 99 --ctx-size 262144 --parallel 1 --jinja",
-      "idle_timeout": 300
+      "vllm_args": "-ngl 99 --ctx-size 262144 --parallel 1 --jinja --cache-ram 40960",
+      "idle_timeout": 300,
+      "warm_timeout": 28800
     },
     {
       "name": "Qwen/Qwen3.5-4B",
@@ -16,7 +17,8 @@
       "model_id": "/opt/models/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
       "instance_type": "g5.xlarge",
       "vllm_args": "-ngl 99 --ctx-size 131072 --parallel 1 --jinja",
-      "idle_timeout": 300
+      "idle_timeout": 300,
+      "warm_timeout": 28800
     }
   ]
 }

@@ -323,7 +323,7 @@ Resources:
     Properties:
       Handler: control_plane.backends.aws.handlers.orchestrator_handler
       CodeUri: ./
-      Timeout: 60
+      Timeout: 300
       MemorySize: 256
       Environment:
         Variables:
@@ -342,6 +342,8 @@ Resources:
             - Effect: Allow
               Action:
                 - ec2:RunInstances
+                - ec2:StartInstances
+                - ec2:StopInstances
                 - ec2:TerminateInstances
                 - ec2:DescribeInstances
                 - ec2:CreateTags
