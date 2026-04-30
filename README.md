@@ -154,6 +154,42 @@ Dependency note:
 - GPU instances must expose port `8000`; the generated security group currently opens that port publicly.
 - The default model seed data points at GGUF model files for `llama-server`. Ensure the files exist in the AMI or upload them to the model bucket and seed `s3_key`.
 
+## Using with Pi
+
+Diogenes works as a pi backend via `~/.pi/agent/models.json`. Add a `diogenes` provider:
+
+```json
+{
+  "providers": {
+    "diogenes": {
+      "baseUrl": "https://<your-streaming-url>.lambda-url.<region>.on.aws/v1",
+      "api": "openai-completions",
+      "apiKey": "<your-dio-key>",
+      "models": [
+        { "id": "Qwen/Qwen3.5-4B", "contextWindow": 131072, "reasoning": true, "compat": { "thinkingFormat": "deepseek" } },
+        { "id": "Qwen/Qwen3.6-27B", "contextWindow": 262144, "reasoning": true, "compat": { "thinkingFormat": "deepseek" } }
+      ]
+    }
+  }
+}
+```
+
+Set as default in `~/.pi/agent/settings.json`:
+
+```json
+{
+  "defaultProvider": "diogenes",
+  "defaultModel": "Qwen/Qwen3.6-27B",
+  "defaultThinkingLevel": "medium"
+}
+```
+
+Key points:
+- **`api: "openai-completions"`** — llama.cpp's server speaks the OpenAI Chat Completions API. Pi's `openai-completions` handler parses DeepSeek-style `<thinking>` blocks from the response stream.
+- **`reasoning: true`** — tells pi the model supports extended thinking. Without this, pi won't send reasoning params and thinking level cycling (`Shift+Tab`) will show "Current model does not support thinking".
+- **`defaultThinkingLevel`** — set to `off` by default in pi; change to `medium` or `high` to enable thinking on these models.
+- **llama-server flag** — models use `--reasoning-format deepseek` in `vllm_args` (see `models.json`) so the server outputs `<thinking>` tags that pi's openai-completions parser maps to thinking blocks.
+
 ## Repository Layout
 
 - `control_plane/core/` - cloud-agnostic domain logic
