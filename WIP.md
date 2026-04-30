@@ -128,7 +128,7 @@
 
 - Current runtime args for 27B:
   - Previous `g5.2xlarge` default: `-ngl 99 --ctx-size 32768 --parallel 1 --jinja`
-  - Updated `g6e.2xlarge` default: `-ngl 99 --ctx-size 262144 --parallel 1 --jinja`
+  - Updated `g6e.2xlarge` default: `-ngl 99 --ctx-size 262144 --parallel 1 --jinja --cache-ram 40960`
 - Startup memory logs at 32k context:
   - GPU: NVIDIA A10G, about `22587 MiB` total VRAM.
   - llama.cpp projected use: `18038 MiB` device memory.
@@ -153,6 +153,10 @@
     and verify llama-server's projected memory, prompt ingestion speed, and first-token
     latency under realistic long-context prompts.
   - Keep `--parallel 1` for personal use and maximum context headroom.
+  - Verify prompt cache behavior with realistic agentic turns. Earlier logs showed
+    `cache state: 1 prompts, 11565.773 MiB` at about 73k prompt tokens while the default
+    prompt-cache RAM limit was `8192 MiB`, so `--cache-ram 40960` is the conservative
+    first pass for keeping most of a 230k-ish token working set cached on `g6e.2xlarge`.
 
 ### Quick EC2 price comparison
 
@@ -220,8 +224,9 @@
 1. Vet and prioritize the Lambda timeout/streaming issue before relying on the 27B model
    for long or streaming requests.
 2. Rebuild/deploy AMI pipeline from repo recipe `1.3.9` so new AMIs do not contain baked GGUF files.
-3. If cold start still needs improvement, vet model-level `cold_start_policy`:
-   - `terminate`: current cheapest behavior.
-   - `stop`: stop instance and keep EBS volume warm.
-   - `keep_warm`: skip scale-down.
-4. For `stop` policy, add `ComputeBackend.stop/start` and state `stopped`; update `scale_up` to start existing stopped instances before launching new ones.
+3. Warm stop/start is now implemented:
+   - idle `ready` instances stop by default instead of terminating.
+   - stopped instances keep EBS warm for `warm_timeout` seconds; default is 8 hours.
+   - `scale_up` starts a warm stopped instance before launching a new one.
+   - streaming requests mark the instance `busy`, and scale-down skips active requests.
+4. If cold start still needs improvement, consider measuring stop/start boot + model load separately from fresh launch + model sync.
