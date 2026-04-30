@@ -127,13 +127,57 @@ async function triggerScaleUp(model) {
   );
 }
 
-async function touchInstance(instanceId) {
+async function beginRequest(instanceId) {
+  const now = Math.floor(Date.now() / 1000);
+  const token = `${now}:${crypto.randomUUID()}`;
   await dynamodb.send(
     new UpdateItemCommand({
       TableName: process.env.INSTANCES_TABLE,
       Key: { instance_id: { S: instanceId } },
-      UpdateExpression: "SET last_request_at = :now",
+      UpdateExpression:
+        "SET #status = :busy, last_request_at = :now ADD active_request_starts :token",
+      ExpressionAttributeNames: {
+        "#status": "status",
+      },
       ExpressionAttributeValues: {
+        ":busy": { S: "busy" },
+        ":now": { N: String(now) },
+        ":token": { SS: [token] },
+      },
+    })
+  );
+  return token;
+}
+
+async function endRequest(instanceId, requestToken) {
+  const result = await dynamodb.send(
+    new UpdateItemCommand({
+      TableName: process.env.INSTANCES_TABLE,
+      Key: { instance_id: { S: instanceId } },
+      UpdateExpression:
+        "SET last_request_at = :now DELETE active_request_starts :token",
+      ExpressionAttributeValues: {
+        ":now": { N: String(Math.floor(Date.now() / 1000)) },
+        ":token": { SS: [requestToken] },
+      },
+      ReturnValues: "ALL_NEW",
+    })
+  );
+
+  const activeStarts = result.Attributes?.active_request_starts?.SS || [];
+  if (activeStarts.length > 0) return;
+
+  await dynamodb.send(
+    new UpdateItemCommand({
+      TableName: process.env.INSTANCES_TABLE,
+      Key: { instance_id: { S: instanceId } },
+      UpdateExpression:
+        "SET #status = :ready, last_request_at = :now REMOVE active_request_starts",
+      ExpressionAttributeNames: {
+        "#status": "status",
+      },
+      ExpressionAttributeValues: {
+        ":ready": { S: "ready" },
         ":now": { N: String(Math.floor(Date.now() / 1000)) },
       },
     })
@@ -181,6 +225,9 @@ async function routableInstance(model) {
   const ready = await readyInstance(model);
   if (ready) return ready;
 
+  const busy = await instanceByStatus(model, "busy");
+  if (busy) return busy;
+
   const starting = await startingInstance(model);
   if (await healthyInstance(starting)) {
     await markInstanceReady(starting.instanceId);
@@ -221,34 +268,43 @@ async function proxyStreaming(event, stream, path) {
     return;
   }
 
-  await touchInstance(instance.instanceId);
+  const requestToken = await beginRequest(instance.instanceId);
 
-  const upstreamHeaders = { "Content-Type": "application/json" };
-  if (process.env.VLLM_API_KEY) {
-    upstreamHeaders.Authorization = `Bearer ${process.env.VLLM_API_KEY}`;
-  }
+  try {
+    const upstreamHeaders = { "Content-Type": "application/json" };
+    if (process.env.VLLM_API_KEY) {
+      upstreamHeaders.Authorization = `Bearer ${process.env.VLLM_API_KEY}`;
+    }
 
-  const upstream = await fetch(`http://${instance.ip}:${VLLM_PORT}${path}`, {
-    method: "POST",
-    headers: upstreamHeaders,
-    body: bodyText,
-  });
+    const upstream = await fetch(`http://${instance.ip}:${VLLM_PORT}${path}`, {
+      method: "POST",
+      headers: upstreamHeaders,
+      body: bodyText,
+    });
 
-  const contentType = upstream.headers.get("content-type") || "application/json";
-  const out = response(stream, upstream.status, {
-    ...JSON_HEADERS,
-    "Content-Type": contentType,
-  });
+    const contentType =
+      upstream.headers.get("content-type") || "application/json";
+    const out = response(stream, upstream.status, {
+      ...JSON_HEADERS,
+      "Content-Type": contentType,
+    });
 
-  if (!upstream.body) {
+    if (!upstream.body) {
+      out.end();
+      return;
+    }
+
+    for await (const chunk of upstream.body) {
+      out.write(chunk);
+    }
     out.end();
-    return;
+  } finally {
+    try {
+      await endRequest(instance.instanceId, requestToken);
+    } catch (err) {
+      console.error("Failed to clear active request marker", err);
+    }
   }
-
-  for await (const chunk of upstream.body) {
-    out.write(chunk);
-  }
-  out.end();
 }
 
 exports.handler = awslambda.streamifyResponse(async (event, stream) => {
