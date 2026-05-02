@@ -3,9 +3,33 @@
 Items are loosely grouped by area. None are blocking, but they're worth addressing
 when there's spare time.
 
+When investigations uncover non-blocking issues or cleanup work, add them here
+instead of leaving them only in chat history or local notes.
+
 ---
 
 ## Bugs / Correctness
+
+- **Deployed llama.cpp image rejected `--spec-default`**. A Qwen3.6 test instance
+  on 2026-05-01 boot-looped with `error: invalid argument: --spec-default`, even
+  though newer llama.cpp releases document the shortcut. Pin or record the
+  `ghcr.io/ggml-org/llama.cpp:server-cuda` image version at AMI build time, and add
+  a startup validation/smoke test for model flags before seeding them.
+
+- **Qwen3.6 context currently disables llama.cpp speculative decoding**. Explicit
+  `ngram-mod` flags start successfully, but startup logs say
+  `common_speculative_is_compat: the target context does not support partial sequence removal`
+  followed by `speculative decoding not supported by this context`. Figure out whether
+  this is caused by Qwen3.6's hybrid/recurrent architecture, prompt cache, 262k context,
+  or the current llama.cpp build before re-enabling speculative flags. Upstream
+  tracking: ggml-org/llama.cpp#20039.
+
+- **`seed_models.py` without `--use-s3` can remove `s3_key` from deployed rows**.
+  Running the normal seed command against a stack that expects S3-backed model files
+  rewrites model configs without `s3_key`, causing new GPU instances to look for
+  prebaked `/opt/models/*.gguf` files instead of downloading from S3. Make S3-backed
+  seeding the default when `ModelsBucketName` exists, or preserve an existing `s3_key`
+  unless the operator explicitly clears it.
 
 - **`manual_scale down` skips actual EC2 termination** (`cluster.py:75`).
   It calls `state.update_instance(status="terminated")` directly without calling
@@ -37,6 +61,14 @@ when there's spare time.
 ---
 
 ## Missing Tests
+
+- **Real AWS bootstrap smoke test is missing**. Once `szlctl` exists, CI should be
+  able to run the actual onboarding path (`szlctl up aws`), call the deployed
+  streaming endpoint with an OpenAI-compatible chat/completions or responses request,
+  retry through the expected first cold start, validate real assistant output, collect
+  `szlctl status` / `szlctl logs` on failure, and always run `szlctl destroy --yes`
+  for cleanup. Start as a manually triggered or scheduled workflow before making it
+  pull-request blocking.
 
 - **`check_health` is not tested when an instance has no `provider_instance_id`**
   (placeholder-only record before EC2 call returns). The timeout path skips the
@@ -96,6 +128,19 @@ when there's spare time.
 
 ## Naming / Consistency
 
+- **Rename project from Diogenes to `scale-zero-llm`**. This is broader than a
+  display-name change: update package metadata, README/design docs, deploy defaults,
+  CloudFormation resource names, DynamoDB/S3/log naming conventions, scripts, tests,
+  API key prefix decisions (`dio-`), local state directories (`.diogenes/`), and
+  migration notes for any already-deployed AWS resources that should keep old names
+  versus be recreated.
+
+- **Audit and normalize remaining runtime naming drift**. The project now runs
+  `llama-server`, but older `vllm` names still appear across env vars, service names,
+  logs, mocks, docs, and tests. After the concrete renames below, do a final repo-wide
+  audit for `vllm` / `VLLM` references and either rename them or document why they
+  intentionally remain.
+
 - **`vllm_args` field name throughout the data model** (DynamoDB, seed_models.py,
   compute.py) is now a misnomer — those args are passed to `llama-server`, not vLLM.
   Should rename to `server_args`. Requires a seed re-run to update DynamoDB.
@@ -112,6 +157,13 @@ when there's spare time.
 ---
 
 ## UX / Client Experience
+
+- **Make first deploy possible without cloning the repo**. SAM-template-only deploy
+  likely is not enough now because bootstrap needs CLI orchestration: discover or
+  create AWS network defaults, build/select the GPU AMI, deploy/update stacks, seed
+  model configs, create API keys, upload/sync model files, and print a working
+  OpenAI-compatible endpoint. Design a small `szlctl` CLI around this flow, with a
+  provider abstraction so AWS comes first and GCP/Azure can be added later.
 
 - **README deploy flow still requires manual follow-up steps**. `make deploy` creates
   infrastructure but does not seed model configs or create an API key. A first-time
@@ -138,6 +190,14 @@ when there's spare time.
 ---
 
 ## Observability / Operations
+
+- **Capture inference performance metrics outside raw logs**. Today throughput is
+  only available by scraping llama-server timing lines from CloudWatch Logs, which is
+  awkward and easy to skew. Add structured per-request metrics for model, instance
+  type, prompt tokens/sec, generation tokens/sec, generated token count, total latency,
+  cache-hit context, and speculative decoding stats such as draft acceptance rate.
+  Start with CloudWatch Embedded Metric Format from the router or a small log parser,
+  then consider a DynamoDB/S3 benchmark table for controlled experiment runs.
 
 - **GPU inference port is exposed to the public internet** (`template.yaml`).
   `GpuSecurityGroup` allows `0.0.0.0/0` to port 8000. The shared `VLLM_API_KEY` helps,
@@ -170,6 +230,14 @@ when there's spare time.
 ---
 
 ## Cold-Start Candidates Requiring Vetting
+
+- **Evaluate replacing the custom GPU AMI with a public GPU base AMI**. Since
+  models now come from S3 at instance boot, the custom Image Builder pipeline mainly
+  bakes Docker, NVIDIA container runtime, CloudWatch agent, the llama.cpp CUDA image,
+  systemd wiring, and boot-service cleanup. Benchmark a public AWS GPU AMI path
+  (ECS GPU-optimized AL2023 or Deep Learning Base GPU Ubuntu 24.04) with user-data
+  setup plus optional `docker pull`, and compare total cold-start time, reliability,
+  image freshness, and onboarding complexity against the dedicated AMI.
 
 - **Reduce health-check readiness lag**. EventBridge currently polls once per minute,
   so DynamoDB `ready` can lag actual llama-server readiness by up to about 60 seconds.
