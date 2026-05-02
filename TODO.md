@@ -155,6 +155,12 @@ instead of leaving them only in chat history or local notes.
   does `systemctl status` it looks like vLLM is running. Could rename to `llm-server`
   across the AMI template, scripts, and documentation.
 
+- **Instance env var is still `VLLM_ARGS`**. The EC2 runtime uses
+  `/etc/diogenes-model.env` with `VLLM_ARGS=...`, even though those arguments are
+  passed to `llama-server` from llama.cpp. Rename the instance env var together with
+  the systemd service cleanup, while preserving compatibility for already-built AMIs
+  during migration.
+
 - **`mock_vllm.py` and `MockVLLMServer`** — the server/file name says vLLM but it's
   just a generic mock HTTP server. Could rename to `mock_llm_server.py` /
   `MockLLMServer` for consistency.
