@@ -359,7 +359,7 @@ exports.handler = awslambda.streamifyResponse(async (event, stream) => {
 
     if (
       method === "POST" &&
-      ["/v1/responses", "/v1/chat/completions"].includes(path)
+      ["/v1/messages", "/v1/responses", "/v1/chat/completions"].includes(path)
     ) {
       await proxyStreaming(event, stream, path);
       return;

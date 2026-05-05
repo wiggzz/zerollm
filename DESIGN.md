@@ -123,6 +123,7 @@ Diogenes uses Google OAuth 2.0 for identity, with an email allowlist for access 
 #### 1. API Gateway (AWS HTTP API) and Streaming Function URL
 
 The Lambda Function URL is the inference entry point. Routes:
+- `POST /v1/messages` — Anthropic Messages API
 - `POST /v1/responses` — OpenAI-compatible Responses API
 - `POST /v1/chat/completions` — compatibility fallback
 - `GET /v1/models` — List available models
