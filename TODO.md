@@ -1,4 +1,4 @@
-# Diogenes — TODO / Tech Debt
+# ZeroLLM — TODO / Tech Debt
 
 Items are loosely grouped by area. None are blocking, but they're worth addressing
 when there's spare time.
@@ -14,7 +14,10 @@ instead of leaving them only in chat history or local notes.
   on 2026-05-01 boot-looped with `error: invalid argument: --spec-default`, even
   though newer llama.cpp releases document the shortcut. Pin or record the
   `ghcr.io/ggml-org/llama.cpp:server-cuda` image version at AMI build time, and add
-  a startup validation/smoke test for model flags before seeding them.
+  a startup validation/smoke test for model flags before seeding them. Reproduced
+  again on 2026-05-05 in dev: `i-0f98b5426e448514a` downloaded Qwen3.6 successfully,
+  then `llama-server` restart-looped on `error: invalid argument: --spec-default`;
+  the live `diogenes-models-dev` row still included the rejected flag.
 
 - **Qwen3.6 context currently disables llama.cpp speculative decoding**. Explicit
   `ngram-mod` flags start successfully, but startup logs say
@@ -133,12 +136,11 @@ instead of leaving them only in chat history or local notes.
 
 ## Naming / Consistency
 
-- **Rename project from Diogenes to `scale-zero-llm`**. This is broader than a
-  display-name change: update package metadata, README/design docs, deploy defaults,
-  CloudFormation resource names, DynamoDB/S3/log naming conventions, scripts, tests,
-  API key prefix decisions (`dio-`), local state directories (`.diogenes/`), and
-  migration notes for any already-deployed AWS resources that should keep old names
-  versus be recreated.
+- **Document migration path for already-deployed Diogenes AWS resources**. The
+  project defaults now use ZeroLLM names, but live `diogenes-*` stacks, buckets,
+  DynamoDB tables, log groups, API keys, and local `.diogenes/` deploy defaults may
+  still exist. Add clear guidance for keeping old resources via explicit env vars
+  versus recreating them under the new defaults.
 
 - **Audit and normalize remaining runtime naming drift**. The project now runs
   `llama-server`, but older `vllm` names still appear across env vars, service names,
@@ -156,7 +158,7 @@ instead of leaving them only in chat history or local notes.
   across the AMI template, scripts, and documentation.
 
 - **Instance env var is still `VLLM_ARGS`**. The EC2 runtime uses
-  `/etc/diogenes-model.env` with `VLLM_ARGS=...`, even though those arguments are
+  `/etc/zerollm-model.env` with `VLLM_ARGS=...`, even though those arguments are
   passed to `llama-server` from llama.cpp. Rename the instance env var together with
   the systemd service cleanup, while preserving compatibility for already-built AMIs
   during migration.
@@ -321,7 +323,7 @@ instead of leaving them only in chat history or local notes.
 
 - **`deploy.sh` `save_pinned_defaults` only persists `GPU_SUBNET_ID` and `VLLM_API_KEY`**
   but the file comment says it saves "pinned network defaults". The `VLLM_API_KEY` is
-  sensitive and ends up in a plaintext `.diogenes/` file. Consider using AWS SSM
+  sensitive and ends up in a plaintext `.zerollm/` file. Consider using AWS SSM
   Parameter Store (SecureString) for the API key instead of a local file, and just
   look it up at deploy time.
 

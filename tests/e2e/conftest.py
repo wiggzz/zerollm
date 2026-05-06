@@ -50,9 +50,9 @@ def localstack_env():
     os.environ.setdefault("AWS_DEFAULT_REGION", region)
 
     suffix = uuid.uuid4().hex[:8]
-    instances_table = f"diogenes-instances-e2e-{suffix}"
-    models_table = f"diogenes-models-e2e-{suffix}"
-    api_keys_table = f"diogenes-api-keys-e2e-{suffix}"
+    instances_table = f"zerollm-instances-e2e-{suffix}"
+    models_table = f"zerollm-models-e2e-{suffix}"
+    api_keys_table = f"zerollm-api-keys-e2e-{suffix}"
 
     dynamodb = boto3.client(
         "dynamodb",

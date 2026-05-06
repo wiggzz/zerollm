@@ -13,7 +13,7 @@ set -euo pipefail
 #   AWS_REGION
 #
 # Optional env vars:
-#   AMI_PIPELINE_STACK     (default: diogenes-ami-pipeline)
+#   AMI_PIPELINE_STACK     (default: zerollm-ami-pipeline)
 #   AMI_PIPELINE_ENV       (default: dev)
 #   BASE_AMI_ID            (auto-selected by region if omitted)
 #   BUILDER_SUBNET_ID      (auto-selected if omitted)
@@ -38,7 +38,7 @@ if ! command -v aws >/dev/null 2>&1; then
 fi
 
 cmd="${1:-build}"
-AMI_PIPELINE_STACK="${AMI_PIPELINE_STACK:-diogenes-ami-pipeline}"
+AMI_PIPELINE_STACK="${AMI_PIPELINE_STACK:-zerollm-ami-pipeline}"
 AMI_PIPELINE_ENV="${AMI_PIPELINE_ENV:-dev}"
 BUILDER_INSTANCE_TYPE="${BUILDER_INSTANCE_TYPE:-c5.2xlarge}"
 PIPELINE_STATUS="${PIPELINE_STATUS:-DISABLED}"

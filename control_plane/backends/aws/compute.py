@@ -71,8 +71,8 @@ class EC2ComputeBackend:
                         {
                             "ResourceType": "instance",
                             "Tags": [
-                                {"Key": "Name", "Value": f"diogenes-{model_config['name']}"},
-                                {"Key": "diogenes:model", "Value": model_config["name"]},
+                                {"Key": "Name", "Value": f"zerollm-{model_config['name']}"},
+                                {"Key": "zerollm:model", "Value": model_config["name"]},
                             ],
                         }
                     ],
@@ -188,13 +188,13 @@ class EC2ComputeBackend:
 set -euo pipefail
 
 log_step() {{
-  printf '%s %s\\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a /var/log/diogenes-coldstart.log /var/log/vllm.log
+  printf '%s %s\\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a /var/log/zerollm-coldstart.log /var/log/vllm.log
 }}
 
 log_step 'cloud_init_start model={model_name}'
 
 # Write model config
-cat > /etc/diogenes-model.env << 'MODELEOF'
+cat > /etc/zerollm-model.env << 'MODELEOF'
 MODEL_NAME={model_id}
 VLLM_ARGS="{vllm_args}"
 MODELEOF
@@ -212,14 +212,14 @@ if command -v /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl >
         "collect_list": [
           {{
             "file_path": "/var/log/vllm.log",
-            "log_group_name": "/diogenes/vllm",
+            "log_group_name": "/zerollm/vllm",
             "log_stream_name": "$INSTANCE_ID/{model_name_safe}",
             "timezone": "UTC",
             "retention_in_days": 7
           }},
           {{
-            "file_path": "/var/log/diogenes-coldstart.log",
-            "log_group_name": "/diogenes/coldstart",
+            "file_path": "/var/log/zerollm-coldstart.log",
+            "log_group_name": "/zerollm/coldstart",
             "log_stream_name": "$INSTANCE_ID/{model_name_safe}",
             "timezone": "UTC",
             "retention_in_days": 7

@@ -4,7 +4,7 @@ set -euo pipefail
 
 AWS_REGION="${AWS_REGION:-$(aws configure get region 2>/dev/null || true)}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
-INSTANCES_TABLE="diogenes-instances-${ENVIRONMENT}"
+INSTANCES_TABLE="zerollm-instances-${ENVIRONMENT}"
 
 if [[ -z "${AWS_REGION}" ]]; then
   echo "AWS_REGION is required" >&2

@@ -9,7 +9,7 @@ set -euo pipefail
 
 AWS_REGION="${AWS_REGION:-$(aws configure get region 2>/dev/null || true)}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
-INSTANCES_TABLE="diogenes-instances-${ENVIRONMENT}"
+INSTANCES_TABLE="zerollm-instances-${ENVIRONMENT}"
 LINES="${LINES:-60}"
 MODEL_FILTER="${MODEL_FILTER:-}"
 

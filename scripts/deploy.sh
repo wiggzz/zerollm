@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# One-command deploy for Diogenes.
+# One-command deploy for ZeroLLM.
 # - Sync requirements + sam build
 # - Resolve/build GPU AMI
 # - Auto-discover subnet/security group defaults
@@ -12,13 +12,13 @@ set -euo pipefail
 #   AWS region configured via AWS_REGION or `aws configure get region`
 #
 # Optional env vars:
-#   STACK_NAME (default: diogenes)
+#   STACK_NAME (default: zerollm)
 #   ENVIRONMENT (default: dev)
 #   AWS_REGION (or uses aws config default region)
 #   GPU_AMI_ID (skip AMI lookup/build if set)
 #   GPU_SUBNET_ID (auto-selected if unset)
 #   GPU_SECURITY_GROUP_ID (auto-selected if unset)
-#   DEPLOY_DEFAULTS_FILE (default: .diogenes/deploy-<region>-<stack>.env)
+#   DEPLOY_DEFAULTS_FILE (default: .zerollm/deploy-<region>-<stack>.env)
 #   ALLOWED_EMAILS
 #   GOOGLE_CLIENT_ID
 #   AMI_BUILD_MODE (auto|latest|build, default: auto)
@@ -39,10 +39,10 @@ require_cmd sam
 require_cmd uv
 
 AWS_REGION="${AWS_REGION:-$(aws configure get region 2>/dev/null || true)}"
-STACK_NAME="${STACK_NAME:-diogenes}"
+STACK_NAME="${STACK_NAME:-zerollm}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
 AMI_BUILD_MODE="${AMI_BUILD_MODE:-auto}"
-DEPLOY_DEFAULTS_FILE="${DEPLOY_DEFAULTS_FILE:-.diogenes/deploy-${AWS_REGION}-${STACK_NAME}.env}"
+DEPLOY_DEFAULTS_FILE="${DEPLOY_DEFAULTS_FILE:-.zerollm/deploy-${AWS_REGION}-${STACK_NAME}.env}"
 
 if [[ -z "${AWS_REGION}" ]]; then
   echo "AWS region is not set. Set AWS_REGION or configure a default AWS region." >&2
@@ -149,14 +149,14 @@ start_model_sync() {
 
 latest_pipeline_ami() {
   AWS_REGION="${AWS_REGION}" \
-  AMI_PIPELINE_STACK="${AMI_PIPELINE_STACK:-diogenes-ami-pipeline}" \
+  AMI_PIPELINE_STACK="${AMI_PIPELINE_STACK:-zerollm-ami-pipeline}" \
   AMI_PIPELINE_ENV="${AMI_PIPELINE_ENV:-dev}" \
   ./ami/imagebuilder.sh latest
 }
 
 build_pipeline_ami() {
   AWS_REGION="${AWS_REGION}" \
-  AMI_PIPELINE_STACK="${AMI_PIPELINE_STACK:-diogenes-ami-pipeline}" \
+  AMI_PIPELINE_STACK="${AMI_PIPELINE_STACK:-zerollm-ami-pipeline}" \
   AMI_PIPELINE_ENV="${AMI_PIPELINE_ENV:-dev}" \
   BASE_AMI_ID="${BASE_AMI_ID:-}" \
   BUILDER_SUBNET_ID="${BUILDER_SUBNET_ID:-}" \

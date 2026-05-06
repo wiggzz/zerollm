@@ -6,7 +6,7 @@ from control_plane.core.auth import hash_api_key, validate_api_key
 
 
 def test_validate_api_key_returns_true_for_stored_key(state):
-    token = "dio-test-token"
+    token = "zllm-test-token"
     state.put_api_key(
         {
             "key_hash": hash_api_key(token),
@@ -23,7 +23,7 @@ def test_validate_api_key_returns_true_for_stored_key(state):
 
 
 def test_validate_api_key_returns_false_for_unknown_key(state):
-    valid, email = validate_api_key("dio-missing", state)
+    valid, email = validate_api_key("zllm-missing", state)
 
     assert valid is False
     assert email == ""

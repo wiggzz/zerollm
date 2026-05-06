@@ -1,4 +1,4 @@
-"""Abstract interfaces for Diogenes backends.
+"""Abstract interfaces for ZeroLLM backends.
 
 Core business logic depends only on these protocols, never on cloud-specific
 SDKs like boto3. To add a new cloud backend, implement these protocols and

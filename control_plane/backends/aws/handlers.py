@@ -147,7 +147,7 @@ def authorizer_handler(event, context):
     if not token:
         return {"isAuthorized": False}
 
-    if token.startswith("dio-"):
+    if token.startswith("zllm-"):
         authorized, email = validate_api_key(token, state)
         if authorized:
             return {"isAuthorized": True, "context": {"email": email}}

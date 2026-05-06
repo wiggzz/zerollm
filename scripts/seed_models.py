@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed default model configurations into the Diogenes DynamoDB models table.
+"""Seed default model configurations into the ZeroLLM DynamoDB models table.
 
 Usage:
   python3 scripts/seed_models.py                          # seed DynamoDB only
@@ -156,7 +156,7 @@ def discover_models_bucket(stack_name: str, region: str | None) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed Diogenes model configurations into DynamoDB")
+    parser = argparse.ArgumentParser(description="Seed ZeroLLM model configurations into DynamoDB")
     parser.add_argument(
         "--environment",
         default=os.environ.get("ENVIRONMENT", "dev"),
@@ -190,12 +190,12 @@ def main() -> None:
     parser.add_argument(
         "--table-name",
         default=os.environ.get("MODELS_TABLE"),
-        help="DynamoDB models table name (default: diogenes-models-<environment>)",
+        help="DynamoDB models table name (default: zerollm-models-<environment>)",
     )
     parser.add_argument(
         "--stack-name",
-        default=os.environ.get("STACK_NAME", "diogenes"),
-        help="CloudFormation stack name used to discover the model bucket (default: diogenes)",
+        default=os.environ.get("STACK_NAME", "zerollm"),
+        help="CloudFormation stack name used to discover the model bucket (default: zerollm)",
     )
     parser.add_argument(
         "--dry-run",
@@ -214,7 +214,7 @@ def main() -> None:
     if uses_s3 and not bucket:
         bucket = discover_models_bucket(args.stack_name, args.region)
 
-    table_name = args.table_name or f"diogenes-models-{args.environment}"
+    table_name = args.table_name or f"zerollm-models-{args.environment}"
     models = load_models(args.manifest)
 
     for model in models:

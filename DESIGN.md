@@ -1,4 +1,4 @@
-# Diogenes
+# ZeroLLM
 
 > *"He has the most who is content with the least."*
 
@@ -6,7 +6,7 @@ A personal LLM backend that scales to zero. Zero cost when idle, GPU inference w
 
 ## Overview
 
-Diogenes is a self-hosted, serverless LLM inference platform. It provides an OpenAI-compatible API backed by open-source models running on on-demand GPU instances. When not in use, the entire system scales to zero — you pay nothing. When a request comes in, the control plane provisions GPU capacity, loads a model, and serves inference. A simple web UI lets you monitor cluster state and chat with models.
+ZeroLLM is a self-hosted, serverless LLM inference platform. It provides an OpenAI-compatible API backed by open-source models running on on-demand GPU instances. When not in use, the entire system scales to zero — you pay nothing. When a request comes in, the control plane provisions GPU capacity, loads a model, and serves inference. A simple web UI lets you monitor cluster state and chat with models.
 
 ## Goals
 
@@ -26,7 +26,7 @@ Diogenes is a self-hosted, serverless LLM inference platform. It provides an Ope
 
 ## Authentication
 
-Diogenes uses Google OAuth 2.0 for identity, with an email allowlist for access control.
+ZeroLLM uses Google OAuth 2.0 for identity, with an email allowlist for access control.
 
 ### How It Works
 
@@ -51,11 +51,11 @@ Diogenes uses Google OAuth 2.0 for identity, with an email allowlist for access 
 
 3. **Programmatic access** (OpenAI client compatibility):
    - Users can generate **API keys** via the UI (stored hashed in DynamoDB)
-   - API keys are sent as `Authorization: Bearer dio-xxxxxxxxxxxx`
-   - The Lambda Authorizer detects the `dio-` prefix and validates against DynamoDB instead of Google
+   - API keys are sent as `Authorization: Bearer zllm-xxxxxxxxxxxx`
+   - The Lambda Authorizer detects the `zllm-` prefix and validates against DynamoDB instead of Google
    - This lets you use standard OpenAI clients:
      ```python
-     client = OpenAI(base_url="https://your-api.example.com/v1", api_key="dio-xxxxxxxxxxxx")
+     client = OpenAI(base_url="https://your-api.example.com/v1", api_key="zllm-xxxxxxxxxxxx")
      ```
 
 ### Auth Components
@@ -63,7 +63,7 @@ Diogenes uses Google OAuth 2.0 for identity, with an email allowlist for access 
 - **Google OAuth Client ID**: Created in Google Cloud Console, configured as a SAM parameter
 - **Lambda Authorizer**: Single function handling both Google JWT and API key validation
 - **DynamoDB ApiKeys table**: Stores hashed API keys, associated email, created at, last used
-- **SSM Parameter**: `/diogenes/allowed-emails` — the email allowlist
+- **SSM Parameter**: `/zerollm/allowed-emails` — the email allowlist
 
 ### DynamoDB ApiKeys Table
 
@@ -281,7 +281,7 @@ For general chat, summarization, and Q&A, Qwen3 32B at ~$1/hr is the best value 
 ## Project Structure
 
 ```
-diogenes/
+zerollm/
 ├── DESIGN.md
 ├── template.yaml              # SAM template
 ├── samconfig.toml             # SAM config

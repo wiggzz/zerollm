@@ -1,8 +1,8 @@
-# Diogenes Implementation Plan
+# ZeroLLM Implementation Plan
 
 ## Context
 
-We've designed Diogenes — a personal LLM backend that scales to zero on AWS. The design doc is committed. Now we need to implement the full stack: SAM infrastructure, Lambda control plane, GPU AMI, and web UI. The goal is to get to a working MVP as fast as possible.
+We've designed ZeroLLM — a personal LLM backend that scales to zero on AWS. The design doc is committed. Now we need to implement the full stack: SAM infrastructure, Lambda control plane, GPU AMI, and web UI. The goal is to get to a working MVP as fast as possible.
 
 **Testing strategy**: Use testcontainers (LocalStack) for E2E testing — all Docker lifecycle managed from pytest. A mock vLLM server stands in for real GPU instances, letting us test the entire lifecycle without AWS access.
 
@@ -100,7 +100,7 @@ class ComputeBackend(Protocol):
 
 **Files:**
 - `control-plane/backends/aws/streaming_router.js`:
-  - validates `dio-` API keys
+  - validates `zllm-` API keys
   - finds a ready instance or returns 503 + triggers async scale-up
   - streams upstream llama-server response chunks through a Lambda Function URL
 - `template.yaml` — exposes `StreamingApiUrl` with `InvokeMode: RESPONSE_STREAM`

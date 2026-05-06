@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Diogenes - Personal LLM backend that scales to zero
+Description: ZeroLLM - Personal LLM backend that scales to zero
 
 Parameters:
   Environment:
@@ -53,7 +53,7 @@ Globals:
 
 Resources:
   # --- API Gateway ---
-  DiogenesApi:
+  ZeroLLMApi:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: $default
@@ -84,7 +84,7 @@ Resources:
   InstancesTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub diogenes-instances-${Environment}
+      TableName: !Sub zerollm-instances-${Environment}
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: instance_id
@@ -109,7 +109,7 @@ Resources:
   ModelsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub diogenes-models-${Environment}
+      TableName: !Sub zerollm-models-${Environment}
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: name
@@ -121,7 +121,7 @@ Resources:
   ApiKeysTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub diogenes-api-keys-${Environment}
+      TableName: !Sub zerollm-api-keys-${Environment}
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: key_hash
@@ -183,7 +183,7 @@ Resources:
   GpuSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: !Sub "Diogenes GPU instances (${Environment})"
+      GroupDescription: !Sub "ZeroLLM GPU instances (${Environment})"
       VpcId: !Ref GpuVpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -192,13 +192,13 @@ Resources:
           CidrIp: 0.0.0.0/0
       Tags:
         - Key: Name
-          Value: !Sub "diogenes-gpu-${Environment}"
+          Value: !Sub "zerollm-gpu-${Environment}"
 
   # --- GPU Instance IAM ---
   ModelsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "diogenes-models-${Environment}-${AWS::AccountId}"
+      BucketName: !Sub "zerollm-models-${Environment}-${AWS::AccountId}"
 
   GpuInstanceRole:
     Type: AWS::IAM::Role
@@ -220,7 +220,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: s3:GetObject
-                Resource: !Sub "arn:aws:s3:::diogenes-models-${Environment}-${AWS::AccountId}/*"
+                Resource: !Sub "arn:aws:s3:::zerollm-models-${Environment}-${AWS::AccountId}/*"
 
   GpuInstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -250,17 +250,17 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource:
-                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/diogenes-model-sync-${Environment}"
-                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/diogenes-model-sync-${Environment}:*"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/zerollm-model-sync-${Environment}"
+                  - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/zerollm-model-sync-${Environment}:*"
               - Effect: Allow
                 Action:
                   - s3:GetObject
                   - s3:PutObject
-                Resource: !Sub "arn:aws:s3:::diogenes-models-${Environment}-${AWS::AccountId}/*"
+                Resource: !Sub "arn:aws:s3:::zerollm-models-${Environment}-${AWS::AccountId}/*"
               - Effect: Allow
                 Action:
                   - s3:ListBucket
-                Resource: !Sub "arn:aws:s3:::diogenes-models-${Environment}-${AWS::AccountId}"
+                Resource: !Sub "arn:aws:s3:::zerollm-models-${Environment}-${AWS::AccountId}"
               - Effect: Allow
                 Action:
                   - dynamodb:DeleteItem
@@ -278,7 +278,7 @@ Resources:
   ModelSyncProject:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: !Sub "diogenes-model-sync-${Environment}"
+      Name: !Sub "zerollm-model-sync-${Environment}"
       Description: Downloads configured GGUF models to S3 and seeds the models table
       ServiceRole: !GetAtt ModelSyncRole.Arn
       TimeoutInMinutes: 480
@@ -427,19 +427,19 @@ Resources:
         CreateKey:
           Type: HttpApi
           Properties:
-            ApiId: !Ref DiogenesApi
+            ApiId: !Ref ZeroLLMApi
             Path: /api/keys
             Method: POST
         ListKeys:
           Type: HttpApi
           Properties:
-            ApiId: !Ref DiogenesApi
+            ApiId: !Ref ZeroLLMApi
             Path: /api/keys
             Method: GET
         DeleteKey:
           Type: HttpApi
           Properties:
-            ApiId: !Ref DiogenesApi
+            ApiId: !Ref ZeroLLMApi
             Path: /api/keys/{key_id}
             Method: DELETE
 
@@ -462,20 +462,20 @@ Resources:
         GetCluster:
           Type: HttpApi
           Properties:
-            ApiId: !Ref DiogenesApi
+            ApiId: !Ref ZeroLLMApi
             Path: /api/cluster
             Method: GET
         ScaleCluster:
           Type: HttpApi
           Properties:
-            ApiId: !Ref DiogenesApi
+            ApiId: !Ref ZeroLLMApi
             Path: /api/cluster/scale
             Method: POST
 
 Outputs:
   ApiUrl:
     Description: API Gateway URL
-    Value: !Sub "https://${DiogenesApi}.execute-api.${AWS::Region}.amazonaws.com"
+    Value: !Sub "https://${ZeroLLMApi}.execute-api.${AWS::Region}.amazonaws.com"
   StreamingApiUrl:
     Description: Lambda Function URL for true streaming inference
     Value: !GetAtt StreamingRouterFunctionUrl.FunctionUrl

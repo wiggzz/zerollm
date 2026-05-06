@@ -46,7 +46,7 @@ function hashApiKey(token) {
 }
 
 async function validateApiKey(token) {
-  if (!token.startsWith("dio-")) return false;
+  if (!token.startsWith("zllm-")) return false;
 
   const keyHash = hashApiKey(token);
   const result = await dynamodb.send(
@@ -78,7 +78,7 @@ async function listModels() {
     data: (result.Items || []).map((item) => ({
       id: item.name.S,
       object: "model",
-      owned_by: "diogenes",
+      owned_by: "zerollm",
     })),
   };
 }

@@ -1,12 +1,21 @@
-# Diogenes
+# ZeroLLM
 
-Diogenes is a personal LLM backend control plane designed to scale GPU inference to zero when idle.
+```text
+███████╗███████╗██████╗  ██████╗ ██╗     ██╗     ███╗   ███╗
+╚══███╔╝██╔════╝██╔══██╗██╔═══██╗██║     ██║     ████╗ ████║
+  ███╔╝ █████╗  ██████╔╝██║   ██║██║     ██║     ██╔████╔██║
+ ███╔╝  ██╔══╝  ██╔══██╗██║   ██║██║     ██║     ██║╚██╔╝██║
+███████╗███████╗██║  ██║╚██████╔╝███████╗███████╗██║ ╚═╝ ██║
+╚══════╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚══════╝╚═╝     ╚═╝
+```
+
+ZeroLLM is a personal LLM backend control plane designed to scale GPU inference to zero when idle.
 
 Current status: phases 1-4 are implemented (orchestration, routing, API key auth, and cluster state). The runtime now starts `llama-server` on GPU instances, although some internal names still say `vLLM`.
 Inference is exposed through a Lambda Function URL for true streamed responses.
 
 Not yet implemented:
-- Google OAuth / JWT validation. Programmatic API keys with the `dio-` prefix are implemented.
+- Google OAuth / JWT validation. Programmatic API keys with the `zllm-` prefix are implemented.
 - Web UI.
 - Automatic model seeding during deploy.
 
@@ -66,9 +75,9 @@ This command automatically:
 - runs `sam build` and `sam deploy` with parameter overrides
 
 Optional deploy environment variables:
-- `STACK_NAME` (default `diogenes`)
+- `STACK_NAME` (default `zerollm`)
 - `ENVIRONMENT` (default `dev`)
-- `DEPLOY_DEFAULTS_FILE` (default `.diogenes/deploy-<region>-<stack>.env`)
+- `DEPLOY_DEFAULTS_FILE` (default `.zerollm/deploy-<region>-<stack>.env`)
 - `AMI_BUILD_MODE=auto` (default): use latest pipeline AMI, build if missing
 - `AMI_BUILD_MODE=latest`: require latest pipeline AMI
 - `AMI_BUILD_MODE=build`: always build a new AMI first
@@ -102,7 +111,7 @@ Optional environment variables:
 - `BUILDER_SECURITY_GROUP_ID` (if omitted, script auto-selects a security group in the subnet VPC)
 - `BUILDER_INSTANCE_TYPE` (default `t3.small`, used only for AMI build instances)
 - `IMAGE_VERSION` (default `1.0.2`; bump when recipe changes)
-- `AMI_PIPELINE_STACK` (default `diogenes-ami-pipeline`)
+- `AMI_PIPELINE_STACK` (default `zerollm-ami-pipeline`)
 - `AMI_PIPELINE_ENV` (default `dev`)
 - `PIPELINE_STATUS` (default `DISABLED`)
 
@@ -147,24 +156,24 @@ Dependency note:
 
 ## Usage Notes
 
-- All API Gateway routes are protected by the Lambda authorizer. Use `Authorization: Bearer <dio-key>` with keys created by `make create-api-key`.
+- All API Gateway routes are protected by the Lambda authorizer. Use `Authorization: Bearer <zllm-key>` with keys created by `make create-api-key`.
 - First inference for a cold model returns `503` with `Retry-After`; the router triggers async scale-up and clients should retry.
-- Use the `StreamingApiUrl` stack output for inference clients. It validates the same `Authorization: Bearer <dio-key>` API keys and supports `POST /v1/responses`, `POST /v1/chat/completions`, and `GET /v1/models`.
+- Use the `StreamingApiUrl` stack output for inference clients. It validates the same `Authorization: Bearer <zllm-key>` API keys and supports `POST /v1/responses`, `POST /v1/chat/completions`, and `GET /v1/models`.
 - Prefer OpenAI's Responses API (`POST /v1/responses`) for new clients. Chat completions remain available for compatibility; legacy completions are not exposed.
 - GPU instances must expose port `8000`; the generated security group currently opens that port publicly.
 - The default model seed data points at GGUF model files for `llama-server`. Ensure the files exist in the AMI or upload them to the model bucket and seed `s3_key`.
 
 ## Using with Pi
 
-Diogenes works as a pi backend via `~/.pi/agent/models.json`. Add a `diogenes` provider:
+ZeroLLM works as a pi backend via `~/.pi/agent/models.json`. Add a `zerollm` provider:
 
 ```json
 {
   "providers": {
-    "diogenes": {
+    "zerollm": {
       "baseUrl": "https://<your-streaming-url>.lambda-url.<region>.on.aws/v1",
       "api": "openai-completions",
-      "apiKey": "<your-dio-key>",
+      "apiKey": "<your-zllm-key>",
       "models": [
         { "id": "Qwen/Qwen3.5-4B", "contextWindow": 131072, "reasoning": true, "compat": { "thinkingFormat": "deepseek" } },
         { "id": "Qwen/Qwen3.6-27B", "contextWindow": 262144, "reasoning": true, "compat": { "thinkingFormat": "deepseek" } }
@@ -178,7 +187,7 @@ Set as default in `~/.pi/agent/settings.json`:
 
 ```json
 {
-  "defaultProvider": "diogenes",
+  "defaultProvider": "zerollm",
   "defaultModel": "Qwen/Qwen3.6-27B",
   "defaultThinkingLevel": "medium"
 }

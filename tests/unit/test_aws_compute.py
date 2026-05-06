@@ -5,7 +5,7 @@ from __future__ import annotations
 from control_plane.backends.aws.compute import EC2ComputeBackend
 
 
-def _backend(models_bucket: str = "diogenes-models-dev-123") -> EC2ComputeBackend:
+def _backend(models_bucket: str = "zerollm-models-dev-123") -> EC2ComputeBackend:
     backend = EC2ComputeBackend.__new__(EC2ComputeBackend)
     backend._vllm_api_key = "secret"
     backend._models_bucket = models_bucket
@@ -22,12 +22,12 @@ def test_build_user_data_downloads_s3_model_and_logs_cold_start_steps():
         }
     )
 
-    assert "aws s3 cp s3://diogenes-models-dev-123/model.gguf /opt/models/model.gguf" in user_data
+    assert "aws s3 cp s3://zerollm-models-dev-123/model.gguf /opt/models/model.gguf" in user_data
     assert "if test -s /opt/models/model.gguf" in user_data
     assert "log_step 'model_download_skip_existing path=/opt/models/model.gguf size_bytes='" in user_data
-    assert "log_step 'model_download_start bucket=diogenes-models-dev-123 key=model.gguf'" in user_data
+    assert "log_step 'model_download_start bucket=zerollm-models-dev-123 key=model.gguf'" in user_data
     assert "log_step 'model_download_done path=/opt/models/model.gguf size_bytes='" in user_data
-    assert 'log_group_name": "/diogenes/coldstart"' in user_data
+    assert 'log_group_name": "/zerollm/coldstart"' in user_data
     assert "--api-key secret" in user_data
     assert "systemctl enable vllm" in user_data
 

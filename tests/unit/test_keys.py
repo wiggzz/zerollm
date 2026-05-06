@@ -9,7 +9,7 @@ from control_plane.core.keys import create_key, delete_key, list_keys
 def test_create_key_persists_hashed_record(state):
     created = create_key("owner@example.com", "laptop", state)
 
-    assert created["key"].startswith("dio-")
+    assert created["key"].startswith("zllm-")
     assert created["key_id"]
 
     valid, email = validate_api_key(created["key"], state)

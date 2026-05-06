@@ -140,7 +140,7 @@ wheels = [
 ]
 
 [[package]]
-name = "diogenes"
+name = "zerollm"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

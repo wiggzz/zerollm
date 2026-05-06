@@ -1,6 +1,6 @@
 .PHONY: setup setup-dev sync-requirements ami-build ami-build-deploy ami-build-start ami-build-latest ami-prune test test-unit test-e2e build deploy validate clean seed-models seed-models-upload create-api-key logs status
 
-STACK_NAME   ?= diogenes
+STACK_NAME   ?= zerollm
 ENVIRONMENT  ?= dev
 AWS_REGION   ?= $(shell aws configure get region 2>/dev/null)
 MODEL        ?=

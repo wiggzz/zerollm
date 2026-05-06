@@ -9,7 +9,7 @@ from control_plane.core.auth import hash_api_key
 from control_plane.core.interfaces import StateStore
 
 
-KEY_PREFIX = "dio"
+KEY_PREFIX = "zllm"
 
 
 def _new_token() -> str:

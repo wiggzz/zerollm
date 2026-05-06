@@ -27,7 +27,7 @@ class MockVLLMHandler(BaseHTTPRequestHandler):
                         {
                             "id": "Qwen/Qwen3-32B",
                             "object": "model",
-                            "owned_by": "diogenes",
+                            "owned_by": "zerollm",
                         }
                     ],
                 },

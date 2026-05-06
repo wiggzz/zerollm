@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Diogenes GPU AMI pipeline (EC2 Image Builder)
+Description: ZeroLLM GPU AMI pipeline (EC2 Image Builder)
 
 Parameters:
   Environment:
@@ -20,7 +20,7 @@ Parameters:
     Description: Instance type used by Image Builder during AMI creation (needs network bandwidth for large downloads)
   ImageVersion:
     Type: String
-    Default: 1.3.10
+    Default: 1.3.12
     Description: Semantic version for Image Builder component/recipe (bump on recipe changes)
   PipelineStatus:
     Type: String
@@ -33,7 +33,7 @@ Resources:
   ImageBuilderRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub diogenes-imagebuilder-role-${Environment}
+      RoleName: !Sub zerollm-imagebuilder-role-${Environment}
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -64,25 +64,25 @@ Resources:
   ImageBuilderInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
-      InstanceProfileName: !Sub diogenes-imagebuilder-profile-${Environment}
+      InstanceProfileName: !Sub zerollm-imagebuilder-profile-${Environment}
       Roles:
         - !Ref ImageBuilderRole
 
-  DiogenesSetupComponent:
+  ZeroLLMSetupComponent:
     Type: AWS::ImageBuilder::Component
     Properties:
-      Name: !Sub diogenes-setup-${Environment}
+      Name: !Sub zerollm-setup-${Environment}
       Platform: Linux
       Version: !Ref ImageVersion
       Description: Install llama.cpp (Docker), CloudWatch agent, NVIDIA toolkit. Models are downloaded from S3 at instance boot — not baked into the AMI.
       Data: !Sub |
-        name: DiogenesSetup
+        name: ZeroLLMSetup
         description: Install llama.cpp (Docker), CloudWatch agent, NVIDIA toolkit. Models downloaded from S3 at boot.
         schemaVersion: 1.0
         phases:
           - name: build
             steps:
-              - name: SetupDiogenes
+              - name: SetupZeroLLM
                 action: ExecuteBash
                 inputs:
                   commands:
@@ -99,10 +99,41 @@ Resources:
                       # This is a single-purpose inference node — package updates have no value here.
                       systemctl disable unattended-upgrades apt-daily.timer apt-daily-upgrade.timer apt-news.service apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
                       apt-get remove -y --purge unattended-upgrades 2>/dev/null || true
-                      # snapd can hold the dpkg lock and delay boot by 30-60s
-                      apt-get remove -y --purge snapd 2>/dev/null || true
                       # PackageKit is a desktop package-management daemon — unused on a server
                       apt-get remove -y --purge packagekit 2>/dev/null || true
+
+                      cat > /usr/local/sbin/zerollm-firstboot-cleanup.sh <<'EOF'
+                      #!/usr/bin/env bash
+                      set -euo pipefail
+                      export DEBIAN_FRONTEND=noninteractive
+                      tmpdir="$(mktemp -d)"
+                      trap 'rm -rf "$tmpdir"' EXIT
+                      curl -fsSL -o "$tmpdir/amazon-ssm-agent.deb" https://s3.us-east-2.amazonaws.com/amazon-ssm-us-east-2/latest/debian_amd64/amazon-ssm-agent.deb
+                      systemctl disable unattended-upgrades apt-daily.timer apt-daily-upgrade.timer apt-news.service apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
+                      apt-get remove -y --purge unattended-upgrades snapd packagekit 2>/dev/null || true
+                      apt-get autoremove -y 2>/dev/null || true
+                      dpkg -i "$tmpdir/amazon-ssm-agent.deb"
+                      systemctl enable --now amazon-ssm-agent || true
+                      EOF
+                      chmod +x /usr/local/sbin/zerollm-firstboot-cleanup.sh
+
+                      cat > /etc/systemd/system/zerollm-firstboot-cleanup.service <<'EOF'
+                      [Unit]
+                      Description=ZeroLLM first boot package cleanup
+                      After=cloud-final.service amazon-ssm-agent.service
+                      Wants=amazon-ssm-agent.service
+                      ConditionPathExists=!/var/lib/zerollm/firstboot-cleanup.done
+
+                      [Service]
+                      Type=oneshot
+                      ExecStart=/usr/local/sbin/zerollm-firstboot-cleanup.sh
+                      ExecStartPost=/usr/bin/mkdir -p /var/lib/zerollm
+                      ExecStartPost=/usr/bin/touch /var/lib/zerollm/firstboot-cleanup.done
+
+                      [Install]
+                      WantedBy=multi-user.target
+                      EOF
+                      systemctl enable zerollm-firstboot-cleanup.service
 
                       # Install CloudWatch agent for persistent log streaming
                       curl -sO https://s3.amazonaws.com/amazoncloudwatch-agent/ubuntu/amd64/latest/amazon-cloudwatch-agent.deb
@@ -127,17 +158,17 @@ Resources:
                       # bytes to EBS at full provisioned throughput (~1000 MB/s).
                       mkdir -p /opt/models
 
-                      cat > /etc/diogenes-model.env <<'EOF'
+                      cat > /etc/zerollm-model.env <<'EOF'
                       MODEL_NAME=
                       VLLM_ARGS=
                       EOF
-                      install -d -m 0755 /opt/diogenes
-                      cat > /opt/diogenes/start_vllm.sh <<'EOF'
+                      install -d -m 0755 /opt/zerollm
+                      cat > /opt/zerollm/start_vllm.sh <<'EOF'
                       #!/usr/bin/env bash
                       set -euo pipefail
-                      source /etc/diogenes-model.env
+                      source /etc/zerollm-model.env
                       if [[ -z "${!MODEL_NAME:-}" ]]; then
-                        echo "MODEL_NAME is required in /etc/diogenes-model.env" >&2
+                        echo "MODEL_NAME is required in /etc/zerollm-model.env" >&2
                         exit 1
                       fi
                       exec docker run --rm \
@@ -150,30 +181,30 @@ Resources:
                         --no-mmap \
                         ${!VLLM_ARGS:-}
                       EOF
-                      chmod +x /opt/diogenes/start_vllm.sh
+                      chmod +x /opt/zerollm/start_vllm.sh
                       cat > /etc/systemd/system/vllm.service <<'EOF'
                       [Unit]
-                      Description=Diogenes llama-server
+                      Description=ZeroLLM llama-server
                       After=network-online.target
                       Wants=network-online.target
                       [Service]
                       Type=simple
                       Restart=always
                       RestartSec=5
-                      EnvironmentFile=/etc/diogenes-model.env
-                      ExecStart=/opt/diogenes/start_vllm.sh
+                      EnvironmentFile=/etc/zerollm-model.env
+                      ExecStart=/opt/zerollm/start_vllm.sh
                       StandardOutput=append:/var/log/vllm.log
                       StandardError=append:/var/log/vllm.log
                       [Install]
                       WantedBy=multi-user.target
                       EOF
                       systemctl daemon-reload
-                      echo "DIOGENES_BOOTSTRAP_DONE" > /var/log/diogenes-bootstrap.done
+                      echo "ZEROLLM_BOOTSTRAP_DONE" > /var/log/zerollm-bootstrap.done
 
-  DiogenesImageRecipe:
+  ZeroLLMImageRecipe:
     Type: AWS::ImageBuilder::ImageRecipe
     Properties:
-      Name: !Sub diogenes-gpu-recipe-${Environment}
+      Name: !Sub zerollm-gpu-recipe-${Environment}
       Version: !Ref ImageVersion
       ParentImage: !Ref BaseAmiId
       BlockDeviceMappings:
@@ -183,12 +214,12 @@ Resources:
             VolumeType: gp3
             DeleteOnTermination: true
       Components:
-        - ComponentArn: !Ref DiogenesSetupComponent
+        - ComponentArn: !Ref ZeroLLMSetupComponent
 
-  DiogenesInfrastructureConfig:
+  ZeroLLMInfrastructureConfig:
     Type: AWS::ImageBuilder::InfrastructureConfiguration
     Properties:
-      Name: !Sub diogenes-gpu-infra-${Environment}
+      Name: !Sub zerollm-gpu-infra-${Environment}
       InstanceProfileName: !Ref ImageBuilderInstanceProfile
       InstanceTypes:
         - !Ref BuilderInstanceType
@@ -197,40 +228,40 @@ Resources:
         - !Ref BuilderSecurityGroupId
       TerminateInstanceOnFailure: true
 
-  DiogenesDistributionConfig:
+  ZeroLLMDistributionConfig:
     Type: AWS::ImageBuilder::DistributionConfiguration
     Properties:
-      Name: !Sub diogenes-gpu-dist-${Environment}
+      Name: !Sub zerollm-gpu-dist-${Environment}
       Distributions:
         - Region: !Ref AWS::Region
           AmiDistributionConfiguration:
-            Name: !Sub diogenes-gpu-{{ imagebuilder:buildDate }}
-            Description: !Sub Diogenes GPU AMI (${Environment})
+            Name: !Sub zerollm-gpu-{{ imagebuilder:buildDate }}
+            Description: !Sub ZeroLLM GPU AMI (${Environment})
             AmiTags:
-              Project: diogenes
+              Project: zerollm
               Environment: !Ref Environment
 
-  DiogenesImagePipeline:
+  ZeroLLMImagePipeline:
     Type: AWS::ImageBuilder::ImagePipeline
     Properties:
-      Name: !Sub diogenes-gpu-pipeline-${Environment}
+      Name: !Sub zerollm-gpu-pipeline-${Environment}
       Status: !Ref PipelineStatus
-      ImageRecipeArn: !Ref DiogenesImageRecipe
-      InfrastructureConfigurationArn: !Ref DiogenesInfrastructureConfig
-      DistributionConfigurationArn: !Ref DiogenesDistributionConfig
+      ImageRecipeArn: !Ref ZeroLLMImageRecipe
+      InfrastructureConfigurationArn: !Ref ZeroLLMInfrastructureConfig
+      DistributionConfigurationArn: !Ref ZeroLLMDistributionConfig
       ImageTestsConfiguration:
         ImageTestsEnabled: false
 
-  DiogenesLifecyclePolicy:
+  ZeroLLMLifecyclePolicy:
     Type: AWS::ImageBuilder::LifecyclePolicy
     Properties:
-      Name: !Sub diogenes-ami-lifecycle-${Environment}
+      Name: !Sub zerollm-ami-lifecycle-${Environment}
       Status: ENABLED
       ExecutionRole: !GetAtt ImageBuilderRole.Arn
       ResourceType: AMI_IMAGE
       ResourceSelection:
         Recipes:
-          - Name: !Sub diogenes-gpu-recipe-${Environment}
+          - Name: !Sub zerollm-gpu-recipe-${Environment}
             SemanticVersion: "x.x.x"
       PolicyDetails:
         - Action:
@@ -241,7 +272,7 @@ Resources:
 
 Outputs:
   ImagePipelineArn:
-    Description: ARN of the Diogenes Image Builder pipeline
-    Value: !Ref DiogenesImagePipeline
+    Description: ARN of the ZeroLLM Image Builder pipeline
+    Value: !Ref ZeroLLMImagePipeline
   ImageRecipeArn:
-    Value: !Ref DiogenesImageRecipe
+    Value: !Ref ZeroLLMImageRecipe
