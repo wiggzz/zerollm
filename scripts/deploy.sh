@@ -103,6 +103,7 @@ save_pinned_defaults() {
   cat > "${DEPLOY_DEFAULTS_FILE}" <<EOF
 GPU_SUBNET_ID=${GPU_SUBNET_ID}
 VLLM_API_KEY=${VLLM_API_KEY}
+HF_TOKEN_SECRET_ARN=${HF_TOKEN_SECRET_ARN:-}
 EOF
   echo "Saved pinned deploy defaults to ${DEPLOY_DEFAULTS_FILE}"
 }

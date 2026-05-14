@@ -20,6 +20,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 DEFAULT_MANIFEST = REPO_ROOT / "models.json"
+DEFAULT_HF_RANGE_GETS = "8"
+DEFAULT_S3_CHUNK_MB = 64
+PROGRESS_STEP_BYTES = 512 * 1024 * 1024
 
 _VLLM_ONLY_FLAGS = {
     "--max-model-len",
@@ -34,9 +37,9 @@ _VLLM_ONLY_FLAGS = {
 
 
 def configure_hf_transfer_environment() -> None:
-    """Use faster Hugging Face Xet defaults while allowing caller overrides."""
+    """Use bounded Hugging Face Xet defaults while allowing caller overrides."""
     os.environ.setdefault("HF_XET_HIGH_PERFORMANCE", "1")
-    os.environ.setdefault("HF_XET_NUM_CONCURRENT_RANGE_GETS", "64")
+    os.environ.setdefault("HF_XET_NUM_CONCURRENT_RANGE_GETS", DEFAULT_HF_RANGE_GETS)
 
 
 def load_models(manifest_path: str | Path = DEFAULT_MANIFEST) -> list[dict]:
@@ -109,10 +112,43 @@ def validate_model(model: dict) -> None:
         )
 
 
+def _int_from_env(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer, got {raw!r}") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be positive, got {value}")
+    return value
+
+
+class UploadProgress:
+    """Print coarse progress for long model uploads."""
+
+    def __init__(self, name: str, step_bytes: int = PROGRESS_STEP_BYTES):
+        self._name = name
+        self._step_bytes = step_bytes
+        self._seen = 0
+        self._next_report = step_bytes
+
+    def __call__(self, bytes_amount: int) -> None:
+        self._seen += bytes_amount
+        if self._seen < self._next_report:
+            return
+
+        gib = self._seen / 1024**3
+        print(f"  {self._name}: streamed {gib:.1f} GiB to S3", flush=True)
+        while self._next_report <= self._seen:
+            self._next_report += self._step_bytes
+
+
 def upload_model(model: dict, bucket: str, region: str | None) -> None:
-    """Download model from HuggingFace and upload to S3 if not already present."""
+    """Stream a model from Hugging Face to S3 if not already present."""
     import boto3
-    from huggingface_hub import hf_hub_download
+    from huggingface_hub import HfFileSystem
 
     hf_repo = model["hf_repo"]
     hf_file = model["hf_file"]
@@ -132,12 +168,75 @@ def upload_model(model: dict, bucket: str, region: str | None) -> None:
     except Exception:
         pass
 
-    print(f"  {name}: downloading {hf_repo}/{hf_file} from HuggingFace...")
-    local_path = hf_hub_download(repo_id=hf_repo, filename=hf_file, revision=hf_revision)
-    size_gb = Path(local_path).stat().st_size / 1024 ** 3
-    print(f"  {name}: uploading {size_gb:.1f} GB to s3://{bucket}/{s3_key}...")
-    s3.upload_file(local_path, bucket, s3_key)
+    chunk_mb = _int_from_env("S3_MULTIPART_CHUNK_MB", DEFAULT_S3_CHUNK_MB)
+    chunk_bytes = chunk_mb * 1024 * 1024
+    hf_path = f"{hf_repo}/{hf_file}"
+    token = os.environ.get("HF_TOKEN") or None
+    fs = HfFileSystem(token=token, block_size=0)
+
+    print(
+        f"  {name}: streaming hf://{hf_path} to s3://{bucket}/{s3_key} "
+        f"(chunk={chunk_mb}MiB)...",
+        flush=True,
+    )
+    with fs.open(hf_path, "rb", revision=hf_revision, block_size=0) as remote_file:
+        upload_stream_to_s3(
+            s3=s3,
+            fileobj=remote_file,
+            bucket=bucket,
+            key=s3_key,
+            chunk_bytes=chunk_bytes,
+            progress=UploadProgress(name),
+        )
     print(f"  {name}: upload complete")
+
+
+def upload_stream_to_s3(
+    *,
+    s3,
+    fileobj,
+    bucket: str,
+    key: str,
+    chunk_bytes: int,
+    progress: UploadProgress,
+) -> None:
+    """Upload a non-seekable stream to S3 with sequential multipart upload."""
+    upload_id = None
+    parts = []
+    try:
+        created = s3.create_multipart_upload(Bucket=bucket, Key=key)
+        upload_id = created["UploadId"]
+
+        part_number = 1
+        while True:
+            chunk = fileobj.read(chunk_bytes)
+            if not chunk:
+                break
+
+            uploaded = s3.upload_part(
+                Bucket=bucket,
+                Key=key,
+                UploadId=upload_id,
+                PartNumber=part_number,
+                Body=chunk,
+            )
+            parts.append({"PartNumber": part_number, "ETag": uploaded["ETag"]})
+            progress(len(chunk))
+            part_number += 1
+
+        if not parts:
+            raise RuntimeError(f"No bytes read while uploading s3://{bucket}/{key}")
+
+        s3.complete_multipart_upload(
+            Bucket=bucket,
+            Key=key,
+            UploadId=upload_id,
+            MultipartUpload={"Parts": parts},
+        )
+        upload_id = None
+    finally:
+        if upload_id is not None:
+            s3.abort_multipart_upload(Bucket=bucket, Key=key, UploadId=upload_id)
 
 
 def discover_models_bucket(stack_name: str, region: str | None) -> str:

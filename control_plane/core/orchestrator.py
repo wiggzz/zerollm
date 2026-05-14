@@ -13,12 +13,10 @@ import time
 import requests
 
 from control_plane.core.interfaces import ComputeBackend, StateStore
-from control_plane.shared.config import normalize_model_name
 
 logger = logging.getLogger(__name__)
 
 SERVER_PORT = 8000
-VLLM_PORT = SERVER_PORT  # backwards-compat alias
 
 # Maximum time (seconds) to wait for an instance to become healthy before terminating.
 MAX_START_SECONDS = 1200  # 20 minutes
@@ -41,7 +39,6 @@ def scale_up(
 
     Returns the instance record.
     """
-    model_name = normalize_model_name(model_name)
     # Idempotency: skip if already starting or ready
     existing = state.list_instances(model=model_name, status="starting")
     existing += state.list_instances(model=model_name, status="ready")
@@ -499,28 +496,3 @@ def check_health(
             results["still_starting"].append(instance_id)
 
     return results
-
-
-def poll_health(
-    ip: str,
-    port: int = VLLM_PORT,
-    timeout: int = 600,
-    interval: int = 10,
-    api_key: str = "",
-) -> bool:
-    """Poll an instance's health endpoint until it responds 200 or times out."""
-    url = f"http://{ip}:{port}/health"
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    deadline = time.time() + timeout
-
-    while time.time() < deadline:
-        try:
-            resp = requests.get(url, headers=headers, timeout=5)
-            if resp.status_code == 200:
-                return True
-            logger.debug("poll_health got %s from %s", resp.status_code, url)
-        except requests.RequestException:
-            pass
-        time.sleep(interval)
-
-    return False

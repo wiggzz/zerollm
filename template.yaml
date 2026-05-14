@@ -301,7 +301,7 @@ Resources:
                 - python3 /tmp/seed_models.py --manifest /tmp/models.json --upload --bucket "$MODELS_BUCKET" --table-name "$MODELS_TABLE" --region "$AWS_DEFAULT_REGION"
       Environment:
         Type: LINUX_CONTAINER
-        ComputeType: BUILD_GENERAL1_MEDIUM
+        ComputeType: BUILD_GENERAL1_LARGE
         Image: aws/codebuild/standard:7.0
         EnvironmentVariables:
           - Name: MODELS_BUCKET

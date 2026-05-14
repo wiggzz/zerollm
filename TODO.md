@@ -10,14 +10,12 @@ instead of leaving them only in chat history or local notes.
 
 ## Bugs / Correctness
 
-- **Deployed llama.cpp image rejected `--spec-default`**. A Qwen3.6 test instance
-  on 2026-05-01 boot-looped with `error: invalid argument: --spec-default`, even
-  though newer llama.cpp releases document the shortcut. Pin or record the
-  `ghcr.io/ggml-org/llama.cpp:server-cuda` image version at AMI build time, and add
-  a startup validation/smoke test for model flags before seeding them. Reproduced
-  again on 2026-05-05 in dev: `i-0f98b5426e448514a` downloaded Qwen3.6 successfully,
-  then `llama-server` restart-looped on `error: invalid argument: --spec-default`;
-  the live `diogenes-models-dev` row still included the rejected flag.
+- **API Gateway first request can exceed common client timeouts**. On 2026-05-13,
+  an authenticated `/api/cluster` request timed out at 10 seconds because the
+  Python authorizer cold start took about 6.3s and the cluster handler took about
+  6.1s. A retry returned `200` immediately. Consider reducing import/cold-start
+  overhead, increasing Lambda memory, or using provisioned concurrency for the
+  control-plane Lambdas if interactive clients depend on short timeouts.
 
 - **Qwen3.6 context currently disables llama.cpp speculative decoding**. Explicit
   `ngram-mod` flags start successfully, but startup logs say
@@ -32,12 +30,12 @@ instead of leaving them only in chat history or local notes.
   plus the current checkpoint flag syntax, and record acceptance rate / tokens per
   second before making it a default.
 
-- **`seed_models.py` without `--use-s3` can remove `s3_key` from deployed rows**.
-  Running the normal seed command against a stack that expects S3-backed model files
-  rewrites model configs without `s3_key`, causing new GPU instances to look for
-  prebaked `/opt/models/*.gguf` files instead of downloading from S3. Make S3-backed
-  seeding the default when `ModelsBucketName` exists, or preserve an existing `s3_key`
-  unless the operator explicitly clears it.
+- **`seed_models.py` without `--upload` or `--use-s3` can remove `s3_key` from
+  deployed rows**. Running the normal seed command against a stack that expects
+  S3-backed model files rewrites model configs without `s3_key`, causing new GPU
+  instances to look for prebaked `/opt/models/*.gguf` files instead of downloading
+  from S3. Make S3-backed seeding the default when `ModelsBucketName` exists, or
+  preserve an existing `s3_key` unless the operator explicitly clears it.
 
 - **`manual_scale down` skips actual EC2 termination** (`cluster.py:75`).
   It calls `state.update_instance(status="terminated")` directly without calling
@@ -54,7 +52,7 @@ instead of leaving them only in chat history or local notes.
   truncated. Fix: add a GSI on `status` alone, or add pagination (`LastEvaluatedKey`
   loop) to the scan path.
 
-- **`compute.py` user_data embeds `VLLM_ARGS` with double-quotes** (line ~103):
+- **`compute.py` user_data embeds `VLLM_ARGS` with double-quotes** (line ~199):
   `VLLM_ARGS="{vllm_args}"`. If `vllm_args` contains a double-quote character this
   breaks the env file. The value is written unescaped into the heredoc.
   Low risk in practice since vllm_args comes from trusted seed data, but worth
@@ -70,11 +68,15 @@ instead of leaving them only in chat history or local notes.
 
 ## Missing Tests
 
-- **Real AWS bootstrap smoke test is missing**. Once `szlctl` exists, CI should be
-  able to run the actual onboarding path (`szlctl up aws`), call the deployed
+- **Basic CI is missing**. Add GitHub Actions that run unit tests and the lightweight
+  e2e/LocalStack test suite on each commit or pull request, then add a build badge to
+  README once the workflow is stable.
+
+- **Real AWS bootstrap smoke test is missing**. Once `zlmctl` exists, CI should be
+  able to run the actual onboarding path (`zlmctl up aws`), call the deployed
   streaming endpoint with an OpenAI-compatible chat/completions or responses request,
   retry through the expected first cold start, validate real assistant output, collect
-  `szlctl status` / `szlctl logs` on failure, and always run `szlctl destroy --yes`
+  `zlmctl status` / `zlmctl logs` on failure, and always run `zlmctl destroy --yes`
   for cleanup. Start as a manually triggered or scheduled workflow before making it
   pull-request blocking.
 
@@ -108,8 +110,9 @@ instead of leaving them only in chat history or local notes.
   cluster API only receives `state` and `trigger_scale_up`, not `compute`. Fixing the
   bug above requires changing the core signature and the AWS handler dependency wiring.
 
-- **`trigger_scale_up` is a bare callable passed everywhere** (`router.py`,
-  `cluster.py`, tests). It's effectively a thin wrapper around a Lambda async invoke.
+- **`trigger_scale_up` is a bare callable passed through the cluster API**
+  (`handlers.py`, `cluster.py`, tests). It's effectively a thin wrapper around a
+  Lambda async invoke.
   This could be a named interface (`ScaleUpTrigger` protocol) to make the boundary
   explicit and testable. Not critical but the current design makes it easy to pass
   the wrong thing silently.
@@ -118,10 +121,6 @@ instead of leaving them only in chat history or local notes.
   `_get_compute_backend()`, unlike `_get_state_store()` which is cached. The compute
   backend is stateless so this is harmless, but it's inconsistent and creates a new
   boto3 client on every handler call. Should be cached the same way the state store is.
-
-- **Port constant is defined in two places**: `orchestrator.py` (`SERVER_PORT = 8000`,
-  `VLLM_PORT = SERVER_PORT`) and `config.py` (`VLLM_PORT = 8000`). The `config.py`
-  one appears unused. Pick one place and import from there.
 
 - **`instance-logs.sh` hardcodes port 8000** for the health check curl. It should
   use the same port constant/convention as the rest of the codebase.
@@ -136,11 +135,11 @@ instead of leaving them only in chat history or local notes.
 
 ## Naming / Consistency
 
-- **Document migration path for already-deployed Diogenes AWS resources**. The
-  project defaults now use ZeroLLM names, but live `diogenes-*` stacks, buckets,
-  DynamoDB tables, log groups, API keys, and local `.diogenes/` deploy defaults may
-  still exist. Add clear guidance for keeping old resources via explicit env vars
-  versus recreating them under the new defaults.
+- **Document migration path for pre-rename Diogenes AWS resources**. The project
+  defaults now use ZeroLLM names, but older deployments may still have `diogenes-*`
+  stacks, buckets, DynamoDB tables, log groups, API keys, AMIs, and local
+  `.diogenes/` deploy defaults. Add clear guidance for keeping old resources via
+  explicit env vars versus recreating them under the new defaults.
 
 - **Audit and normalize remaining runtime naming drift**. The project now runs
   `llama-server`, but older `vllm` names still appear across env vars, service names,
@@ -171,17 +170,17 @@ instead of leaving them only in chat history or local notes.
 
 ## UX / Client Experience
 
-- **Set up release-please for `szlctl` releases and installer artifacts**. The Rust
+- **Set up release-please for `zlmctl` releases and installer artifacts**. The Rust
   CLI should have automated version bumps, changelogs, tags, GitHub Releases, and
   published binaries/install scripts. Each release should also publish matching AWS
   deploy artifacts (templates, Lambda packages, model manifest, checksums) so
-  `szlctl up aws --version <x>` deploys a coherent artifact set.
+  `zlmctl up aws --version <x>` deploys a coherent artifact set.
 
 - **Make first deploy possible without cloning the repo**. SAM-template-only deploy
   likely is not enough now because bootstrap needs CLI orchestration: discover or
   create AWS network defaults, build/select the GPU AMI, deploy/update stacks, seed
   model configs, create API keys, upload/sync model files, and print a working
-  OpenAI-compatible endpoint. Design a small `szlctl` CLI around this flow, with a
+  OpenAI-compatible endpoint. Design a small `zlmctl` CLI around this flow, with a
   provider abstraction so AWS comes first and GCP/Azure can be added later.
 
 - **README deploy flow still requires manual follow-up steps**. `make deploy` creates
@@ -210,10 +209,10 @@ instead of leaving them only in chat history or local notes.
 
 ## Observability / Operations
 
-- **Document and enforce the `szlctl` AWS trust boundary**. Before `szlctl up aws`
+- **Document and enforce the `zlmctl` AWS trust boundary**. Before `zlmctl up aws`
   mutates an account, it should print a concrete plan of resources it will create,
   the account/region/stack it will target, the fact that GPU EC2 instances may launch
-  on inference, and what `szlctl destroy` will remove or preserve. Publish a minimal
+  on inference, and what `zlmctl destroy` will remove or preserve. Publish a minimal
   IAM policy and a CloudFormation template for a dedicated deploy role, support
   normal AWS credential-chain/profile usage for deploying through that role, tag all
   owned resources, avoid reading unrelated account resources, and support dry-run/plan
@@ -253,7 +252,11 @@ instead of leaving them only in chat history or local notes.
 
 - **Needs vetting: CodeBuild model sync dependency install time**. The model sync job
   installs Python dependencies on every run. This is not on the inference hot path, but
-  a CodeBuild cache or custom image would make redeploys cleaner and faster.
+  a CodeBuild cache or custom image would make redeploys cleaner and faster. A fresh
+  ZeroLLM deploy on 2026-05-05 was killed with exit 137 on `BUILD_GENERAL1_MEDIUM`
+  while downloading Hugging Face model files, so the project now uses
+  `BUILD_GENERAL1_LARGE`; monitor whether that is sufficient and whether the extra
+  cost is worth avoiding a custom sync image.
 
 ---
 
@@ -315,17 +318,11 @@ instead of leaving them only in chat history or local notes.
   and a web UI as if they exist. Either mark DESIGN/PLAN as historical or refresh
   them so new contributors don't implement against stale architecture.
 
-- **`normalize_model_name` is now a no-op** but is still imported and called in
-  `orchestrator.py` and `router.py`. Delete the function and the call sites.
-
-- **`poll_health` in `orchestrator.py` is dead code** — nothing calls it since the
-  EventBridge refactor. Delete it.
-
-- **`deploy.sh` `save_pinned_defaults` only persists `GPU_SUBNET_ID` and `VLLM_API_KEY`**
-  but the file comment says it saves "pinned network defaults". The `VLLM_API_KEY` is
-  sensitive and ends up in a plaintext `.zerollm/` file. Consider using AWS SSM
-  Parameter Store (SecureString) for the API key instead of a local file, and just
-  look it up at deploy time.
+- **`deploy.sh` persists sensitive deploy defaults in plaintext**. `VLLM_API_KEY`
+  is sensitive and ends up in a plaintext `.zerollm/` file alongside
+  `HF_TOKEN_SECRET_ARN`. Consider using AWS SSM Parameter Store (SecureString) or
+  Secrets Manager for the API key instead of a local file, and just look it up at
+  deploy time.
 
 - **`handlers.py` has a `# TODO Phase 5: Google JWT validation`** comment in the
   authorizer. Either implement it or remove the comment — it's been there across
