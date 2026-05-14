@@ -10,6 +10,18 @@ instead of leaving them only in chat history or local notes.
 
 ## Bugs / Correctness
 
+- **High priority: Lambda Function URL streaming cannot cancel backend generation
+  on client disconnect**. Live dev test on 2026-05-14: `curl --max-time 3` against
+  `/v1/chat/completions` disconnected while receiving chunks, but the streaming
+  router Lambda kept running for about 55 seconds, the DynamoDB row stayed `busy`
+  with `active_request_starts`, and llama-server continued generating until the
+  request naturally finished. AWS Lambda response streaming docs say streamed
+  responses are not interrupted or stopped when the invoking client connection is
+  broken, so `stream.close`/backpressure-based cancellation is not reliable with
+  Function URLs. Fix likely requires an architecture where the proxy can observe
+  socket close directly (for example ALB/ECS/EC2/CloudFront-to-service) or an
+  explicit application-level cancel protocol that can call a backend cancel endpoint.
+
 - **API Gateway first request can exceed common client timeouts**. On 2026-05-13,
   an authenticated `/api/cluster` request timed out at 10 seconds because the
   Python authorizer cold start took about 6.3s and the cluster handler took about
