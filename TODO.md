@@ -218,6 +218,13 @@ instead of leaving them only in chat history or local notes.
   owned resources, avoid reading unrelated account resources, and support dry-run/plan
   output plus operator-supplied permissions boundaries where possible.
 
+- **Generate deploy-role IAM/CloudFormation templates instead of publishing
+  account-specific docs**. The operator should be able to run a parametrized command
+  such as `zlmctl aws permissions --region us-east-2 --stack-name zerollm` to print
+  the deploy identity policy and optional CloudFormation execution-role template for
+  their account. Keep static docs conceptual so examples don't drift or encode one
+  developer account's ARNs.
+
 - **Capture inference performance metrics outside raw logs**. Today throughput is
   only available by scraping llama-server timing lines from CloudWatch Logs, which is
   awkward and easy to skew. Add structured per-request metrics for model, instance

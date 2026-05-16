@@ -78,6 +78,7 @@ Optional deploy environment variables:
 - `STACK_NAME` (default `zerollm`)
 - `ENVIRONMENT` (default `dev`)
 - `DEPLOY_DEFAULTS_FILE` (default `.zerollm/deploy-<region>-<stack>.env`)
+- `CFN_ROLE_ARN`: CloudFormation execution role ARN to use for stack updates
 - `AMI_BUILD_MODE=auto` (default): use latest pipeline AMI, build if missing
 - `AMI_BUILD_MODE=latest`: require latest pipeline AMI
 - `AMI_BUILD_MODE=build`: always build a new AMI first
