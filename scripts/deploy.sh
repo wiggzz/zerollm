@@ -19,6 +19,7 @@ set -euo pipefail
 #   GPU_SUBNET_ID (auto-selected if unset)
 #   GPU_SECURITY_GROUP_ID (auto-selected if unset)
 #   DEPLOY_DEFAULTS_FILE (default: .zerollm/deploy-<region>-<stack>.env)
+#   CFN_ROLE_ARN (optional CloudFormation execution role ARN for stack updates)
 #   ALLOWED_EMAILS
 #   GOOGLE_CLIENT_ID
 #   AMI_BUILD_MODE (auto|latest|build, default: auto)
@@ -215,6 +216,9 @@ fi
 save_pinned_defaults
 
 echo "Using STACK_NAME=${STACK_NAME}"
+if [[ -n "${CFN_ROLE_ARN:-}" ]]; then
+  echo "Using CFN_ROLE_ARN=${CFN_ROLE_ARN}"
+fi
 echo "Using GpuAmiId=${GPU_AMI_ID}"
 echo "Using GpuSubnetId=${GPU_SUBNET_ID}"
 echo "Using GpuVpcId=${vpc_id}"
@@ -242,12 +246,19 @@ if [[ -n "${HF_TOKEN_SECRET_ARN:-}" ]]; then
   param_overrides+=("HFTokenSecretArn=${HF_TOKEN_SECRET_ARN}")
 fi
 
-sam deploy \
+deploy_args=(
   --region "${AWS_REGION}" \
   --stack-name "${STACK_NAME}" \
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
   --resolve-s3 \
   --parameter-overrides "${param_overrides[@]}"
+)
+
+if [[ -n "${CFN_ROLE_ARN:-}" ]]; then
+  deploy_args+=(--role-arn "${CFN_ROLE_ARN}")
+fi
+
+sam deploy "${deploy_args[@]}"
 
 if [[ "${SYNC_MODELS_ON_DEPLOY:-1}" == "1" ]]; then
   start_model_sync
