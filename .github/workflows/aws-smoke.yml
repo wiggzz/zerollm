@@ -1,0 +1,157 @@
+name: AWS Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: AWS region
+        required: true
+        default: us-east-2
+      stack_name:
+        description: CloudFormation stack name. Leave blank for zerollm-smoke-<run-id>.
+        required: false
+        default: ""
+      environment:
+        description: ZeroLLM environment suffix. Leave blank for ci<run-id>.
+        required: false
+        default: ""
+      model:
+        description: Model to smoke test
+        required: true
+        default: Qwen/Qwen3.5-4B
+      cfn_role_arn:
+        description: Optional CloudFormation execution role ARN
+        required: false
+        default: ""
+      hf_token_secret_arn:
+        description: Optional Secrets Manager ARN for HF_TOKEN during model sync
+        required: false
+        default: ""
+      cleanup:
+        description: Delete the stack after the smoke run
+        type: boolean
+        required: true
+        default: true
+      smoke_timeout_seconds:
+        description: Max seconds to wait for cold start and first response
+        required: true
+        default: "2400"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  aws-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      AWS_REGION: ${{ inputs.region }}
+      INPUT_STACK_NAME: ${{ inputs.stack_name }}
+      INPUT_ENVIRONMENT: ${{ inputs.environment }}
+      INPUT_CFN_ROLE_ARN: ${{ inputs.cfn_role_arn }}
+      INPUT_HF_TOKEN_SECRET_ARN: ${{ inputs.hf_token_secret_arn }}
+      SMOKE_MODEL: ${{ inputs.model }}
+      SMOKE_TIMEOUT_SECONDS: ${{ inputs.smoke_timeout_seconds }}
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      AWS_ACCESS_KEY_ID_SECRET: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set smoke names
+        run: |
+          stack_name="${INPUT_STACK_NAME:-zerollm-smoke-${GITHUB_RUN_ID}}"
+          environment="${INPUT_ENVIRONMENT:-ci${GITHUB_RUN_ID}}"
+          {
+            echo "STACK_NAME=${stack_name}"
+            echo "ENVIRONMENT=${environment}"
+            echo "SMOKE_EMAIL=ci-${GITHUB_RUN_ID}@zerollm.local"
+          } >> "${GITHUB_ENV}"
+          echo "Stack: ${stack_name}"
+          echo "Environment: ${environment}"
+
+      - name: Configure AWS credentials from OIDC role
+        if: env.AWS_ROLE_TO_ASSUME != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+
+      - name: Configure AWS credentials from static secrets
+        if: env.AWS_ROLE_TO_ASSUME == '' && env.AWS_ACCESS_KEY_ID_SECRET != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra upload
+
+      - name: Deploy stack
+        env:
+          CFN_ROLE_ARN: ${{ env.INPUT_CFN_ROLE_ARN }}
+          HF_TOKEN_SECRET_ARN: ${{ env.INPUT_HF_TOKEN_SECRET_ARN }}
+          AMI_BUILD_MODE: latest
+          SYNC_MODELS_ON_DEPLOY: "1"
+        run: ./scripts/deploy.sh | tee deploy.log
+
+      - name: Wait for model sync
+        run: |
+          build_id="$(awk -F': ' '/Started model sync build:/ {print $2}' deploy.log | tail -1)"
+          if [[ -z "${build_id}" ]]; then
+            echo "No model sync build started; skipping wait"
+            exit 0
+          fi
+          echo "Waiting for CodeBuild ${build_id}"
+          while true; do
+            status="$(aws codebuild batch-get-builds --ids "${build_id}" --query 'builds[0].buildStatus' --output text)"
+            echo "Model sync status: ${status}"
+            case "${status}" in
+              SUCCEEDED) exit 0 ;;
+              FAILED|FAULT|STOPPED|TIMED_OUT) exit 1 ;;
+            esac
+            sleep 30
+          done
+
+      - name: Run LLM smoke request
+        run: uv run --no-sync python scripts/aws_smoke_request.py
+
+      - name: Show stack events on failure
+        if: failure()
+        run: |
+          aws cloudformation describe-stack-events \
+            --stack-name "${STACK_NAME}" \
+            --query 'StackEvents[0:30].[Timestamp,ResourceStatus,LogicalResourceId,ResourceStatusReason]' \
+            --output table || true
+
+      - name: Cleanup stack
+        if: always() && inputs.cleanup
+        run: |
+          bucket="$(aws cloudformation describe-stacks \
+            --stack-name "${STACK_NAME}" \
+            --query "Stacks[0].Outputs[?OutputKey=='ModelsBucketName'].OutputValue | [0]" \
+            --output text 2>/dev/null || true)"
+          if [[ -n "${bucket}" && "${bucket}" != "None" ]]; then
+            aws s3 rm "s3://${bucket}" --recursive || true
+          fi
+          aws cloudformation delete-stack --stack-name "${STACK_NAME}" || true
+          aws cloudformation wait stack-delete-complete --stack-name "${STACK_NAME}" || true

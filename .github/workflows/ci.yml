@@ -35,5 +35,8 @@ jobs:
       - name: Check streaming router syntax
         run: node --check control_plane/backends/aws/streaming_router.js
 
+      - name: Compile Python scripts
+        run: python -m py_compile scripts/*.py
+
       - name: Run unit tests
         run: uv run --no-sync pytest tests/unit/ -q
