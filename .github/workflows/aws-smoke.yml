@@ -7,6 +7,10 @@ on:
         description: AWS region
         required: true
         default: us-east-2
+      aws_account_id:
+        description: AWS account ID. Used to derive default role ARNs.
+        required: true
+        default: "265978616089"
       stack_name:
         description: CloudFormation stack name. Leave blank for zerollm-smoke-<run-id>.
         required: false
@@ -20,7 +24,7 @@ on:
         required: true
         default: Qwen/Qwen3.5-4B
       cfn_role_arn:
-        description: Optional CloudFormation execution role ARN
+        description: Optional CloudFormation execution role ARN. Defaults to zerollm-cloudformation-execution-role-dev in aws_account_id.
         required: false
         default: ""
       hf_token_secret_arn:
@@ -44,16 +48,18 @@ permissions:
 jobs:
   aws-smoke:
     runs-on: ubuntu-latest
+    environment: dev
     timeout-minutes: 90
     env:
       AWS_REGION: ${{ inputs.region }}
+      AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
       INPUT_STACK_NAME: ${{ inputs.stack_name }}
       INPUT_ENVIRONMENT: ${{ inputs.environment }}
       INPUT_CFN_ROLE_ARN: ${{ inputs.cfn_role_arn }}
-      INPUT_HF_TOKEN_SECRET_ARN: ${{ inputs.hf_token_secret_arn }}
+      INPUT_HF_TOKEN_SECRET_ARN: ${{ inputs.hf_token_secret_arn || secrets.HF_TOKEN_SECRET_ARN }}
       SMOKE_MODEL: ${{ inputs.model }}
       SMOKE_TIMEOUT_SECONDS: ${{ inputs.smoke_timeout_seconds }}
-      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || format('arn:aws:iam::{0}:role/zerollm-deployment-role-dev', inputs.aws_account_id) }}
       AWS_ACCESS_KEY_ID_SECRET: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     steps:
@@ -64,13 +70,16 @@ jobs:
         run: |
           stack_name="${INPUT_STACK_NAME:-zerollm-smoke-${GITHUB_RUN_ID}}"
           environment="${INPUT_ENVIRONMENT:-ci${GITHUB_RUN_ID}}"
+          cfn_role_arn="${INPUT_CFN_ROLE_ARN:-arn:aws:iam::${AWS_ACCOUNT_ID}:role/zerollm-cloudformation-execution-role-dev}"
           {
             echo "STACK_NAME=${stack_name}"
             echo "ENVIRONMENT=${environment}"
+            echo "CFN_ROLE_ARN=${cfn_role_arn}"
             echo "SMOKE_EMAIL=ci-${GITHUB_RUN_ID}@zerollm.local"
           } >> "${GITHUB_ENV}"
           echo "Stack: ${stack_name}"
           echo "Environment: ${environment}"
+          echo "CloudFormation role: ${cfn_role_arn}"
 
       - name: Configure AWS credentials from OIDC role
         if: env.AWS_ROLE_TO_ASSUME != ''
@@ -108,7 +117,6 @@ jobs:
 
       - name: Deploy stack
         env:
-          CFN_ROLE_ARN: ${{ env.INPUT_CFN_ROLE_ARN }}
           HF_TOKEN_SECRET_ARN: ${{ env.INPUT_HF_TOKEN_SECRET_ARN }}
           AMI_BUILD_MODE: latest
           SYNC_MODELS_ON_DEPLOY: "1"
