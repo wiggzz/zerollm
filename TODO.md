@@ -255,6 +255,11 @@ instead of leaving them only in chat history or local notes.
   an instance after timeout, it logs an error but there's no metric or alarm. An
   operator won't know a model is stuck in a boot failure loop until a user reports 503s.
 
+- **GPU EC2 instances are missing a project-level tag**. Instances are tagged with
+  `Name` and `zerollm:model`, but not `Project=zerollm`, so account queries such as
+  `describe-instances --filters Name=tag:Project,Values=zerollm` miss active/stopped
+  ZeroLLM capacity. Add a stable project/environment tag set to launched instances.
+
 - **`make status` shows all instances including terminated ones** from DynamoDB.
   `cluster.py` filters terminated instances out of the API response, and
   `instance-logs.sh` filters them out before showing logs, but `cluster-status.sh`
@@ -278,6 +283,37 @@ instead of leaving them only in chat history or local notes.
   cost is worth avoiding a custom sync image.
 
 ---
+
+## Cold-Start Feature Work
+
+- **Router should block on cold start instead of returning 503**. Currently the
+  streaming router triggers scale-up and returns 503 + Retry-After immediately.
+  Since cold starts are 2–4 minutes, the router should hold the connection open
+  (it already uses `InvokeMode: RESPONSE_STREAM` with a 900s Lambda timeout),
+  poll for instance readiness, and emit SSE progress events during the wait.
+  Once the instance is ready, proxy the actual request on the same stream.
+  This eliminates the need for client-side retry loops.
+
+- **Emit cold-start progress via SSE events**. While blocking the connection,
+  the router should emit `text/event-stream` events with structured JSON:
+  `{"type": "cold_start", "phase": "loading model", "elapsed": 45, "progress": 30}`.
+  Phases come from probing `/health` (llama-server returns `{"status": "loading
+  model"}`) and falling back to DynamoDB `status_message` and age-based heuristics.
+  Requires:
+  1. `check_health` in orchestrator stores raw `/health` body as `status_message`
+     on the DynamoDB instance record (so router can read it between health probes).
+  2. Router `waitForReady` loop polls `/health` every ~5s, emits SSE events on
+     phase changes, returns when ready.
+  3. After cold start completes, continue streaming the upstream response on the
+     same connection (clients see cold_start events then chat tokens).
+
+- **Pi extension to render cold-start SSE events in the TUI**. A pi coding agent
+  extension that:
+  1. Configures ZeroLLM as an OpenAI-compatible provider (base URL + API key).
+  2. Hooks into provider request/response lifecycle to detect cold-start SSE events.
+  3. Renders a widget or overlay showing current phase, progress bar, elapsed time.
+  4. Optionally provides `/zlmctl status` or similar command to check cluster state.
+  5. Uses pi's `ctx.ui.setWidget()` or `ctx.ui.custom()` for TUI rendering.
 
 ## Cold-Start Candidates Requiring Vetting
 
