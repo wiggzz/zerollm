@@ -130,6 +130,12 @@ data "aws_iam_policy_document" "github_deploy" {
   }
 
   statement {
+    sid       = "SmokeApiKeyWrite"
+    actions   = ["dynamodb:PutItem"]
+    resources = ["arn:aws:dynamodb:${var.aws_region}:${var.account_id}:table/${var.stack_prefix}-api-keys-*"]
+  }
+
+  statement {
     sid = "DeployDiscovery"
     actions = [
       "ec2:DescribeSubnets",
