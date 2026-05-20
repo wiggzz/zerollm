@@ -1,6 +1,9 @@
 name: AWS Smoke
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       region:
@@ -49,22 +52,27 @@ permissions:
   contents: read
   id-token: write
 
+concurrency:
+  group: aws-smoke-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   aws-smoke:
     runs-on: ubuntu-latest
     environment: dev
     timeout-minutes: 90
     env:
-      AWS_REGION: ${{ inputs.region }}
-      AWS_ACCOUNT_ID: ${{ inputs.aws_account_id }}
-      INPUT_STACK_NAME: ${{ inputs.stack_name }}
-      INPUT_ENVIRONMENT: ${{ inputs.environment }}
-      INPUT_CFN_ROLE_ARN: ${{ inputs.cfn_role_arn }}
+      AWS_REGION: ${{ inputs.region || 'us-east-2' }}
+      AWS_ACCOUNT_ID: ${{ inputs.aws_account_id || '265978616089' }}
+      INPUT_STACK_NAME: ${{ inputs.stack_name || '' }}
+      INPUT_ENVIRONMENT: ${{ inputs.environment || '' }}
+      INPUT_CFN_ROLE_ARN: ${{ inputs.cfn_role_arn || '' }}
       INPUT_HF_TOKEN_SECRET_ARN: ${{ inputs.hf_token_secret_arn || secrets.HF_TOKEN_SECRET_ARN }}
-      AMI_BUILD_MODE: ${{ inputs.ami_build_mode }}
-      SMOKE_MODEL: ${{ inputs.model }}
-      SMOKE_TIMEOUT_SECONDS: ${{ inputs.smoke_timeout_seconds }}
-      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || format('arn:aws:iam::{0}:role/zerollm-deployment-role-dev', inputs.aws_account_id) }}
+      AMI_BUILD_MODE: ${{ inputs.ami_build_mode || (github.event_name == 'push' && 'build') || 'latest' }}
+      CLEANUP: ${{ github.event_name != 'workflow_dispatch' || inputs.cleanup }}
+      SMOKE_MODEL: ${{ inputs.model || 'Qwen/Qwen3.5-4B' }}
+      SMOKE_TIMEOUT_SECONDS: ${{ inputs.smoke_timeout_seconds || '2400' }}
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || format('arn:aws:iam::{0}:role/zerollm-deployment-role-dev', inputs.aws_account_id || '265978616089') }}
       AWS_ACCESS_KEY_ID_SECRET: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY_SECRET: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     steps:
@@ -156,14 +164,14 @@ jobs:
             --output table || true
 
       - name: Refresh AWS credentials before cleanup
-        if: always() && inputs.cleanup && env.AWS_ROLE_TO_ASSUME != ''
+        if: always() && env.CLEANUP == 'true' && env.AWS_ROLE_TO_ASSUME != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
 
       - name: Refresh static AWS credentials before cleanup
-        if: always() && inputs.cleanup && env.AWS_ROLE_TO_ASSUME == '' && env.AWS_ACCESS_KEY_ID_SECRET != ''
+        if: always() && env.CLEANUP == 'true' && env.AWS_ROLE_TO_ASSUME == '' && env.AWS_ACCESS_KEY_ID_SECRET != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ env.AWS_REGION }}
@@ -171,7 +179,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Cleanup stack
-        if: always() && inputs.cleanup
+        if: always() && env.CLEANUP == 'true'
         run: |
           bucket="$(aws cloudformation describe-stacks \
             --stack-name "${STACK_NAME}" \
