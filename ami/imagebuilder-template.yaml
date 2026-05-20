@@ -20,8 +20,12 @@ Parameters:
     Description: Instance type used by Image Builder during AMI creation (needs network bandwidth for large downloads)
   ImageVersion:
     Type: String
-    Default: 1.3.12
+    Default: 1.3.13
     Description: Semantic version for Image Builder component/recipe (bump on recipe changes)
+  LlamaCppDockerImage:
+    Type: String
+    Default: ghcr.io/ggml-org/llama.cpp:server-cuda-b9222
+    Description: llama.cpp server image to bake into GPU AMIs
   PipelineStatus:
     Type: String
     Default: DISABLED
@@ -151,7 +155,8 @@ Resources:
 
                       # Pre-pull the llama.cpp server image so the first start is fast.
                       # server-cuda bundles CUDA libs — no compile step, no CPU arch mismatch.
-                      docker pull ghcr.io/ggml-org/llama.cpp:server-cuda
+                      # Pin the build so newly-supported GGUF architectures are reproducible.
+                      docker pull ${LlamaCppDockerImage}
 
                       # Models are downloaded from S3 at instance boot (not baked into the AMI).
                       # This avoids EBS snapshot lazy-initialization (~33 MB/s) by writing fresh
@@ -175,7 +180,7 @@ Resources:
                         --gpus all \
                         --network host \
                         -v /opt/models:/opt/models \
-                        ghcr.io/ggml-org/llama.cpp:server-cuda \
+                        ${LlamaCppDockerImage} \
                         -m "${!MODEL_NAME}" \
                         --host 0.0.0.0 --port 8000 \
                         --no-mmap \

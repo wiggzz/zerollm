@@ -20,6 +20,7 @@ set -euo pipefail
 #   BUILDER_SECURITY_GROUP_ID (auto-selected if omitted)
 #   BUILDER_INSTANCE_TYPE  (default: t3.small)
 #   IMAGE_VERSION          (default: 1.0.2)
+#   LLAMA_CPP_DOCKER_IMAGE (default from template)
 #   PIPELINE_STATUS        (default: DISABLED)
 
 require() {
@@ -51,10 +52,7 @@ _template_default() {
   awk "/^  ${param}:/{f=1} f && /Default:/{sub(/^[[:space:]]*Default:[[:space:]]*/,\"\"); print; exit}" "${TEMPLATE_FILE}"
 }
 IMAGE_VERSION="${IMAGE_VERSION:-$(_template_default ImageVersion)}"
-PRIMARY_MODEL_GGUF_REPO="${PRIMARY_MODEL_GGUF_REPO:-$(_template_default PrimaryModelGgufRepo)}"
-PRIMARY_MODEL_GGUF_FILE="${PRIMARY_MODEL_GGUF_FILE:-$(_template_default PrimaryModelGgufFile)}"
-SMALL_MODEL_GGUF_REPO="${SMALL_MODEL_GGUF_REPO:-$(_template_default SmallModelGgufRepo)}"
-SMALL_MODEL_GGUF_FILE="${SMALL_MODEL_GGUF_FILE:-$(_template_default SmallModelGgufFile)}"
+LLAMA_CPP_DOCKER_IMAGE="${LLAMA_CPP_DOCKER_IMAGE:-$(_template_default LlamaCppDockerImage)}"
 
 default_base_ami_for_region() {
   case "$1" in
@@ -179,11 +177,8 @@ deploy_pipeline_stack() {
         BuilderSecurityGroupId="${BUILDER_SECURITY_GROUP_ID}" \
         BuilderInstanceType="${BUILDER_INSTANCE_TYPE}" \
         ImageVersion="${IMAGE_VERSION}" \
-        PipelineStatus="${PIPELINE_STATUS}" \
-        PrimaryModelGgufRepo="${PRIMARY_MODEL_GGUF_REPO}" \
-        PrimaryModelGgufFile="${PRIMARY_MODEL_GGUF_FILE}" \
-        SmallModelGgufRepo="${SMALL_MODEL_GGUF_REPO}" \
-        SmallModelGgufFile="${SMALL_MODEL_GGUF_FILE}" 2>&1
+        LlamaCppDockerImage="${LLAMA_CPP_DOCKER_IMAGE}" \
+        PipelineStatus="${PIPELINE_STATUS}" 2>&1
   )"
   rc=$?
   set -e
