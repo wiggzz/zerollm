@@ -139,9 +139,15 @@ data "aws_iam_policy_document" "github_deploy" {
   statement {
     sid = "DeployDiscovery"
     actions = [
+      "ec2:DescribeSecurityGroups",
       "ec2:DescribeSubnets",
+      "imagebuilder:GetWorkflowExecution",
+      "imagebuilder:GetWorkflowStepExecution",
       "imagebuilder:GetImage",
       "imagebuilder:ListImagePipelineImages",
+      "imagebuilder:ListWorkflowStepExecutions",
+      "imagebuilder:StartImagePipelineExecution",
+      "ssm:ListCommandInvocations",
     ]
     resources = ["*"]
   }

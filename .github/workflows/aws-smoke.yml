@@ -132,7 +132,9 @@ jobs:
         env:
           HF_TOKEN_SECRET_ARN: ${{ env.INPUT_HF_TOKEN_SECRET_ARN }}
           SYNC_MODELS_ON_DEPLOY: "1"
-        run: ./scripts/deploy.sh | tee deploy.log
+        run: |
+          set -o pipefail
+          ./scripts/deploy.sh | tee deploy.log
 
       - name: Wait for model sync
         run: |
