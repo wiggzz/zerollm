@@ -1,5 +1,8 @@
 # ZeroLLM
 
+[![CI](https://github.com/wiggzz/zerollm/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/wiggzz/zerollm/actions/workflows/ci.yml)
+[![AWS Smoke](https://github.com/wiggzz/zerollm/actions/workflows/aws-smoke.yml/badge.svg?branch=main)](https://github.com/wiggzz/zerollm/actions/workflows/aws-smoke.yml)
+
 ```text
 ███████╗███████╗██████╗  ██████╗ ██╗     ██╗     ███╗   ███╗
 ╚══███╔╝██╔════╝██╔══██╗██╔═══██╗██║     ██║     ████╗ ████║
