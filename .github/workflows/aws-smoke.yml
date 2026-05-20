@@ -36,6 +36,10 @@ on:
         type: boolean
         required: true
         default: true
+      ami_build_mode:
+        description: AMI selection mode. Use build after AMI recipe/runtime changes.
+        required: true
+        default: latest
       smoke_timeout_seconds:
         description: Max seconds to wait for cold start and first response
         required: true
@@ -57,6 +61,7 @@ jobs:
       INPUT_ENVIRONMENT: ${{ inputs.environment }}
       INPUT_CFN_ROLE_ARN: ${{ inputs.cfn_role_arn }}
       INPUT_HF_TOKEN_SECRET_ARN: ${{ inputs.hf_token_secret_arn || secrets.HF_TOKEN_SECRET_ARN }}
+      AMI_BUILD_MODE: ${{ inputs.ami_build_mode }}
       SMOKE_MODEL: ${{ inputs.model }}
       SMOKE_TIMEOUT_SECONDS: ${{ inputs.smoke_timeout_seconds }}
       AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || format('arn:aws:iam::{0}:role/zerollm-deployment-role-dev', inputs.aws_account_id) }}
@@ -118,7 +123,6 @@ jobs:
       - name: Deploy stack
         env:
           HF_TOKEN_SECRET_ARN: ${{ env.INPUT_HF_TOKEN_SECRET_ARN }}
-          AMI_BUILD_MODE: latest
           SYNC_MODELS_ON_DEPLOY: "1"
         run: ./scripts/deploy.sh | tee deploy.log
 
