@@ -44,3 +44,41 @@ def test_build_user_data_validates_prebaked_model_when_s3_key_absent():
     assert "aws s3 cp" not in user_data
     assert "log_step 'model_prebaked_expected path=/opt/models/small.gguf'" in user_data
     assert "test -s /opt/models/small.gguf" in user_data
+
+
+def test_launch_tags_instance_and_volume_with_stack_ownership():
+    class FakeEC2:
+        def run_instances(self, **kwargs):
+            self.kwargs = kwargs
+            return {"Instances": [{"InstanceId": "i-123", "PublicIpAddress": "203.0.113.10"}]}
+
+    ec2 = FakeEC2()
+    backend = EC2ComputeBackend.__new__(EC2ComputeBackend)
+    backend._ec2 = ec2
+    backend._ami_id = "ami-123"
+    backend._security_group_id = "sg-123"
+    backend._subnet_ids = ["subnet-123"]
+    backend._instance_profile_arn = "arn:aws:iam::123:instance-profile/zerollm"
+    backend._vllm_api_key = ""
+    backend._models_bucket = ""
+    backend._instance_tags = {
+        "zerollm:environment": "ci123",
+        "zerollm:stack-id": "arn:aws:cloudformation:us-east-2:123:stack/zerollm-smoke/abc",
+    }
+
+    instance_id, public_ip = backend.launch(
+        {
+            "name": "Qwen/Qwen3.5-4B",
+            "instance_type": "g5.xlarge",
+            "model_id": "/opt/models/small.gguf",
+        }
+    )
+
+    assert (instance_id, public_ip) == ("i-123", "203.0.113.10")
+    tag_specs = ec2.kwargs["TagSpecifications"]
+    assert {spec["ResourceType"] for spec in tag_specs} == {"instance", "volume"}
+    for spec in tag_specs:
+        tags = {tag["Key"]: tag["Value"] for tag in spec["Tags"]}
+        assert tags["zerollm:model"] == "Qwen/Qwen3.5-4B"
+        assert tags["zerollm:environment"] == "ci123"
+        assert tags["zerollm:stack-id"] == "arn:aws:cloudformation:us-east-2:123:stack/zerollm-smoke/abc"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import hashlib
+from collections.abc import Mapping
 
 import boto3
 from botocore.exceptions import ClientError
@@ -20,6 +21,7 @@ class EC2ComputeBackend:
         instance_profile_arn: str,
         vllm_api_key: str = "",
         models_bucket: str = "",
+        instance_tags: Mapping[str, str] | None = None,
         endpoint_url: str | None = None,
     ):
         kwargs = {}
@@ -33,6 +35,7 @@ class EC2ComputeBackend:
         self._instance_profile_arn = instance_profile_arn
         self._vllm_api_key = vllm_api_key
         self._models_bucket = models_bucket
+        self._instance_tags = dict(instance_tags or {})
 
     def launch(self, model_config: dict) -> tuple[str, str]:
         """Launch an EC2 GPU instance for the given model config.
@@ -45,6 +48,16 @@ class EC2ComputeBackend:
 
         for subnet_id in self._subnet_ids:
             try:
+                tags = [
+                    {"Key": "Name", "Value": f"zerollm-{model_config['name']}"},
+                    {"Key": "zerollm:model", "Value": model_config["name"]},
+                ]
+                tags.extend(
+                    {"Key": key, "Value": value}
+                    for key, value in self._instance_tags.items()
+                    if value
+                )
+
                 resp = self._ec2.run_instances(
                     ImageId=self._ami_id,
                     InstanceType=model_config["instance_type"],
@@ -70,10 +83,11 @@ class EC2ComputeBackend:
                     TagSpecifications=[
                         {
                             "ResourceType": "instance",
-                            "Tags": [
-                                {"Key": "Name", "Value": f"zerollm-{model_config['name']}"},
-                                {"Key": "zerollm:model", "Value": model_config["name"]},
-                            ],
+                            "Tags": tags,
+                        },
+                        {
+                            "ResourceType": "volume",
+                            "Tags": tags,
                         }
                     ],
                 )

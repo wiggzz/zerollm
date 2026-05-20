@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import urllib.request
 from decimal import Decimal
 
 logging.basicConfig(
@@ -52,6 +53,10 @@ def _get_compute_backend():
         instance_profile_arn=get_env("GPU_INSTANCE_PROFILE_ARN"),
         vllm_api_key=os.environ.get("VLLM_API_KEY", ""),
         models_bucket=os.environ.get("MODELS_BUCKET", ""),
+        instance_tags={
+            "zerollm:environment": os.environ.get("ZEROLLM_ENVIRONMENT", ""),
+            "zerollm:stack-id": os.environ.get("ZEROLLM_STACK_ID", ""),
+        },
     )
 
 
@@ -74,6 +79,60 @@ def _json_default(value):
         # Preserve integer semantics when possible (e.g. Decimal("1") -> 1).
         return int(value) if value == value.to_integral_value() else float(value)
     raise TypeError(f"Object of type {value.__class__.__name__} is not JSON serializable")
+
+
+def _send_custom_resource_response(
+    event: dict,
+    context,
+    status: str,
+    data: dict | None = None,
+    reason: str | None = None,
+) -> None:
+    body = json.dumps(
+        {
+            "Status": status,
+            "Reason": reason or f"See CloudWatch log stream: {context.log_stream_name}",
+            "PhysicalResourceId": event.get("PhysicalResourceId")
+            or f"{event.get('StackId', 'stack')}/gpu-instance-cleanup",
+            "StackId": event["StackId"],
+            "RequestId": event["RequestId"],
+            "LogicalResourceId": event["LogicalResourceId"],
+            "NoEcho": False,
+            "Data": data or {},
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        event["ResponseURL"],
+        data=body,
+        method="PUT",
+        headers={"content-type": "", "content-length": str(len(body))},
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        response.read()
+
+
+def _terminate_instances_for_stack(stack_id: str) -> list[str]:
+    import boto3
+
+    ec2 = boto3.client("ec2")
+    response = ec2.describe_instances(
+        Filters=[
+            {"Name": "tag:zerollm:stack-id", "Values": [stack_id]},
+            {
+                "Name": "instance-state-name",
+                "Values": ["pending", "running", "stopping", "stopped"],
+            },
+        ]
+    )
+    instance_ids = [
+        instance["InstanceId"]
+        for reservation in response.get("Reservations", [])
+        for instance in reservation.get("Instances", [])
+    ]
+    if instance_ids:
+        logger.warning("Terminating %d stack-owned GPU instance(s): %s", len(instance_ids), instance_ids)
+        ec2.terminate_instances(InstanceIds=instance_ids)
+    return instance_ids
 
 
 # ---- Phase 1: Orchestrator ----
@@ -111,6 +170,25 @@ def orchestrator_handler(event, context):
     else:
         logger.warning("Unknown orchestrator event: %s", event)
         return {"statusCode": 400, "body": json.dumps({"error": "unknown action"})}
+
+
+def gpu_instance_cleanup_handler(event, context):
+    """CloudFormation custom resource that terminates stack-owned GPU instances on delete."""
+    request_type = event.get("RequestType")
+    try:
+        terminated: list[str] = []
+        if request_type == "Delete":
+            stack_id = os.environ.get("ZEROLLM_STACK_ID") or event["StackId"]
+            terminated = _terminate_instances_for_stack(stack_id)
+        _send_custom_resource_response(
+            event,
+            context,
+            "SUCCESS",
+            {"TerminatedInstanceIds": ",".join(terminated)},
+        )
+    except Exception as exc:
+        logger.exception("GPU instance cleanup custom resource failed")
+        _send_custom_resource_response(event, context, "FAILED", reason=str(exc))
 
 
 def _make_trigger_scale_up():
