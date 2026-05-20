@@ -151,6 +151,21 @@ jobs:
             --query 'StackEvents[0:30].[Timestamp,ResourceStatus,LogicalResourceId,ResourceStatusReason]' \
             --output table || true
 
+      - name: Refresh AWS credentials before cleanup
+        if: always() && inputs.cleanup && env.AWS_ROLE_TO_ASSUME != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+
+      - name: Refresh static AWS credentials before cleanup
+        if: always() && inputs.cleanup && env.AWS_ROLE_TO_ASSUME == '' && env.AWS_ACCESS_KEY_ID_SECRET != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
       - name: Cleanup stack
         if: always() && inputs.cleanup
         run: |
