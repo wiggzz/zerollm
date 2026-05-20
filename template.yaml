@@ -333,6 +333,8 @@ Resources:
           GPU_INSTANCE_PROFILE_ARN: !GetAtt GpuInstanceProfile.Arn
           VLLM_API_KEY: !Ref VllmApiKey
           MODELS_BUCKET: !Ref ModelsBucket
+          ZEROLLM_ENVIRONMENT: !Ref Environment
+          ZEROLLM_STACK_ID: !Ref AWS::StackId
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref InstancesTable
@@ -352,6 +354,32 @@ Resources:
             - Effect: Allow
               Action: iam:PassRole
               Resource: !GetAtt GpuInstanceRole.Arn
+
+  GpuInstanceCleanupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: control_plane.backends.aws.handlers.gpu_instance_cleanup_handler
+      CodeUri: ./
+      Timeout: 60
+      Environment:
+        Variables:
+          ZEROLLM_ENVIRONMENT: !Ref Environment
+          ZEROLLM_STACK_ID: !Ref AWS::StackId
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ec2:DescribeInstances
+                - ec2:TerminateInstances
+              Resource: "*"
+
+  CleanupGpuInstances:
+    Type: Custom::ZeroLLMGpuInstanceCleanup
+    DependsOn:
+      - GpuSecurityGroup
+    Properties:
+      ServiceToken: !GetAtt GpuInstanceCleanupFunction.Arn
+      StackId: !Ref AWS::StackId
 
   StreamingRouterFunction:
     Type: AWS::Serverless::Function
