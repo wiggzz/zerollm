@@ -68,7 +68,8 @@ jobs:
       INPUT_ENVIRONMENT: ${{ inputs.environment || '' }}
       INPUT_CFN_ROLE_ARN: ${{ inputs.cfn_role_arn || '' }}
       INPUT_HF_TOKEN_SECRET_ARN: ${{ inputs.hf_token_secret_arn || secrets.HF_TOKEN_SECRET_ARN }}
-      AMI_BUILD_MODE: ${{ inputs.ami_build_mode || (github.event_name == 'push' && 'build') || 'latest' }}
+      AMI_BUILD_MODE: ${{ inputs.ami_build_mode || 'auto' }}
+      IMAGE_VERSION: ${{ format('1.3.{0}', github.run_number) }}
       CLEANUP: ${{ github.event_name != 'workflow_dispatch' || inputs.cleanup }}
       SMOKE_MODEL: ${{ inputs.model || 'Qwen/Qwen3.5-4B' }}
       SMOKE_TIMEOUT_SECONDS: ${{ inputs.smoke_timeout_seconds || '2400' }}
@@ -78,6 +79,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Select AMI build mode
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          if [[ "${AMI_BUILD_MODE}" != "auto" ]]; then
+            echo "Using explicit AMI_BUILD_MODE=${AMI_BUILD_MODE}"
+            exit 0
+          fi
+
+          before="${{ github.event.before }}"
+          if [[ -z "${before}" || "${before}" =~ ^0+$ ]]; then
+            before="HEAD~1"
+          fi
+
+          if git diff --name-only "${before}" "${GITHUB_SHA}" -- ami/imagebuilder-template.yaml ami/imagebuilder.sh | grep -q .; then
+            echo "AMI pipeline changed; forcing AMI build."
+            echo "AMI_BUILD_MODE=build" >> "${GITHUB_ENV}"
+          else
+            echo "AMI pipeline unchanged; using latest AMI, or building only if none exists."
+          fi
 
       - name: Set smoke names
         run: |

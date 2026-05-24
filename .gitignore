@@ -26,6 +26,11 @@ ui/dist/
 .env
 .env.local
 
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+
 # OS
 .DS_Store
 Thumbs.db

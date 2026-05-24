@@ -7,12 +7,25 @@ for token.actions.githubusercontent.com, matching the Sportnumerics account setu
 It creates a GitHub-assumable deployment role and a CloudFormation execution role
 used by sam deploy --role-arn.
 
+Terraform state is stored in S3 at:
+
+- bucket: `zerollm-terraform-state-265978616089-us-east-2`
+- key: `infrastructure/dev/terraform.tfstate`
+
+The backend uses Terraform's S3 lockfile support, so Terraform 1.10 or newer is
+required. The checked-in `.terraform.lock.hcl` remains the provider dependency
+lock file and should stay in git.
+
 ## Deploy Dev Roles
 
 Run with privileged local AWS credentials:
 
     cd infrastructure
     ./deploy.sh dev
+
+The deploy script creates the state bucket if it is missing, enables versioning,
+blocks public access, enables AES-256 server-side encryption, and runs
+`terraform init -migrate-state -force-copy` before applying.
 
 Useful outputs:
 
