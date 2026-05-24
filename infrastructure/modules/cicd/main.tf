@@ -141,6 +141,7 @@ data "aws_iam_policy_document" "github_deploy" {
     actions = [
       "ec2:DescribeSecurityGroups",
       "ec2:DescribeSubnets",
+      "imagebuilder:CreateComponent",
       "imagebuilder:GetWorkflowExecution",
       "imagebuilder:GetWorkflowStepExecution",
       "imagebuilder:GetImage",
