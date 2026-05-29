@@ -71,6 +71,15 @@ def extract_text(payload: dict[str, Any]) -> str:
     return "\n".join(texts)
 
 
+def chat_completion_payload(model: str, prompt: str, max_tokens: int) -> dict[str, Any]:
+    return {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": max_tokens,
+        "temperature": 0,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run an AWS ZeroLLM smoke request")
     parser.add_argument("--stack-name", default=os.environ.get("STACK_NAME", "zerollm"))
@@ -81,6 +90,7 @@ def main() -> None:
     parser.add_argument("--email", default=os.environ.get("SMOKE_EMAIL", "ci@zerollm.local"))
     parser.add_argument("--timeout-seconds", type=int, default=int(os.environ.get("SMOKE_TIMEOUT_SECONDS", "2400")))
     parser.add_argument("--retry-seconds", type=int, default=int(os.environ.get("SMOKE_RETRY_SECONDS", "30")))
+    parser.add_argument("--max-tokens", type=int, default=int(os.environ.get("SMOKE_MAX_TOKENS", "256")))
     args = parser.parse_args()
 
     if not args.region:
@@ -108,12 +118,7 @@ def main() -> None:
             "POST",
             f"{base_url}/v1/chat/completions",
             key,
-            json={
-                "model": args.model,
-                "messages": [{"role": "user", "content": args.prompt}],
-                "max_tokens": 24,
-                "temperature": 0,
-            },
+            json=chat_completion_payload(args.model, args.prompt, args.max_tokens),
         )
         last_body = resp.text[:2000]
         print(f"POST /v1/chat/completions attempt={attempt} -> {resp.status_code}")
