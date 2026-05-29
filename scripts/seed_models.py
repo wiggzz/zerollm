@@ -92,6 +92,12 @@ def validate_model(model: dict) -> None:
     """Raise ValueError if a model config looks wrong for llama-server."""
     name = model.get("name", "?")
 
+    if model.get("hf_repo") and model.get("hf_file") and not model.get("hf_revision"):
+        raise ValueError(
+            f"Model '{name}': hf_revision is required when seeding from Hugging Face. "
+            "Pin a commit SHA so CI does not ingest a moving GGUF artifact."
+        )
+
     model_id = model.get("model_id") or model.get("name", "")
     if not model_id.startswith("/"):
         raise ValueError(
