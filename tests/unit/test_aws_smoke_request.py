@@ -29,4 +29,5 @@ def test_chat_completion_payload_uses_larger_completion_budget():
         "messages": [{"role": "user", "content": "Reply with exactly: zerollm smoke ok"}],
         "max_tokens": 1024,
         "temperature": 0,
+        "reasoning_effort": "none",
     }
