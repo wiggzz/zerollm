@@ -2,23 +2,23 @@
   "models": [
     {
       "name": "Qwen/Qwen3.6-27B",
-      "hf_repo": "unsloth/Qwen3.6-27B-GGUF",
-      "hf_revision": "82d411acf4a06cfb8d9b073a5211bf410bfc29bf",
-      "hf_file": "Qwen3.6-27B-Q4_K_M.gguf",
-      "model_id": "/opt/models/Qwen3.6-27B-Q4_K_M.gguf",
+      "hf_repo": "unsloth/Qwen3.6-27B-MTP-GGUF",
+      "hf_revision": "5cb35eb3dcbf52dbce5f87dbc64df6aaffadcace",
+      "hf_file": "Qwen3.6-27B-UD-Q4_K_XL.gguf",
+      "model_id": "/opt/models/Qwen3.6-27B-UD-Q4_K_XL.gguf",
       "instance_type": "g6e.2xlarge",
-      "vllm_args": "-ngl 99 --ctx-size 262144 --parallel 1 --jinja --cache-ram 40960 --spec-default --ctx-checkpoints 12",
+      "vllm_args": "-ngl 99 --ctx-size 262144 --parallel 1 --jinja --cache-ram 40960 --spec-type draft-mtp --spec-draft-n-max 2",
       "idle_timeout": 300,
       "warm_timeout": 28800
     },
     {
       "name": "Qwen/Qwen3.5-4B",
-      "hf_repo": "bartowski/Qwen_Qwen3.5-4B-GGUF",
-      "hf_revision": "c6913843e7fdab8b7f16447d42852c4a7a3fd98b",
-      "hf_file": "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
-      "model_id": "/opt/models/Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+      "hf_repo": "unsloth/Qwen3.5-4B-MTP-GGUF",
+      "hf_revision": "86835bf9949e4d14d6860f7910b1340ad4f271a9",
+      "hf_file": "Qwen3.5-4B-UD-Q4_K_XL.gguf",
+      "model_id": "/opt/models/Qwen3.5-4B-UD-Q4_K_XL.gguf",
       "instance_type": "g5.xlarge",
-      "vllm_args": "-ngl 99 --ctx-size 131072 --parallel 1 --jinja",
+      "vllm_args": "-ngl 99 --ctx-size 131072 --parallel 1 --jinja --spec-type draft-mtp --spec-draft-n-max 2",
       "idle_timeout": 300,
       "warm_timeout": 28800
     }

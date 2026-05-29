@@ -37,18 +37,12 @@ instead of leaving them only in chat history or local notes.
   overhead, increasing Lambda memory, or using provisioned concurrency for the
   control-plane Lambdas if interactive clients depend on short timeouts.
 
-- **Qwen3.6 context currently disables llama.cpp speculative decoding**. Explicit
-  `ngram-mod` flags start successfully, but startup logs say
-  `common_speculative_is_compat: the target context does not support partial sequence removal`
-  followed by `speculative decoding not supported by this context`. Figure out whether
-  this is caused by Qwen3.6's hybrid/recurrent architecture, prompt cache, 262k context,
-  or the current llama.cpp build before re-enabling speculative flags. Upstream
-  tracking: ggml-org/llama.cpp#20039. Follow-up research on 2026-05-02 found the
-  deployed logs were running `build_info: b8757-a29e4c0b7`, after upstream
-  speculative checkpointing merged in ggml-org/llama.cpp#19493. Retest with the
-  checkpoint path explicitly enabled, e.g. `--spec-type ngram-mod --draft-max 48`
-  plus the current checkpoint flag syntax, and record acceptance rate / tokens per
-  second before making it a default.
+- **Measure Qwen3.6 MTP throughput after deployment**. The default manifest now
+  points at Unsloth's Qwen3.6 MTP GGUF and enables llama.cpp draft-MTP flags, but
+  deployed performance still needs a before/after run that records load time,
+  acceptance rate, prompt tokens/sec, and generated tokens/sec. Keep `--parallel 1`
+  while using `--spec-type draft-mtp`; upstream notes say `-np > 1` is not supported
+  for MTP.
 
 - **`seed_models.py` without `--upload` or `--use-s3` can remove `s3_key` from
   deployed rows**. Running the normal seed command against a stack that expects
