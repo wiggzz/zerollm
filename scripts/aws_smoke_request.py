@@ -77,6 +77,7 @@ def chat_completion_payload(model: str, prompt: str, max_tokens: int) -> dict[st
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
         "temperature": 0,
+        "reasoning_effort": "none",
     }
 
 
