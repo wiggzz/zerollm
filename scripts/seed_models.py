@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -116,6 +117,34 @@ def validate_model(model: dict) -> None:
             f"Model '{name}': vllm_args contains vLLM-only flag(s) not supported by "
             f"llama-server: {bad}. Use llama-server flags like -ngl, --ctx-size, --jinja."
         )
+
+    args = shlex.split(server_args)
+    if _flag_value(args, "--spec-type") == "draft-mtp":
+        parallel = _flag_value(args, "--parallel") or _flag_value(args, "-np")
+        if parallel and _positive_int(parallel, "--parallel/-np") > 1:
+            raise ValueError(
+                f"Model '{name}': draft-mtp does not support --parallel/-np greater than 1."
+            )
+
+
+def _flag_value(args: list[str], flag: str) -> str | None:
+    prefix = f"{flag}="
+    for i, arg in enumerate(args):
+        if arg.startswith(prefix):
+            return arg[len(prefix) :]
+        if arg == flag and i + 1 < len(args):
+            return args[i + 1]
+    return None
+
+
+def _positive_int(raw: str, flag: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{flag} must be an integer, got {raw!r}") from exc
+    if value <= 0:
+        raise ValueError(f"{flag} must be positive, got {raw!r}")
+    return value
 
 
 def _int_from_env(name: str, default: int) -> int:

@@ -201,7 +201,7 @@ Key points:
 - **`api: "openai-completions"`** — llama.cpp's server speaks the OpenAI Chat Completions API. Pi's `openai-completions` handler parses DeepSeek-style `<thinking>` blocks from the response stream.
 - **`reasoning: true`** — tells pi the model supports extended thinking. Without this, pi won't send reasoning params and thinking level cycling (`Shift+Tab`) will show "Current model does not support thinking".
 - **`defaultThinkingLevel`** — set to `off` by default in pi; change to `medium` or `high` to enable thinking on these models.
-- **llama-server flag** — models use `--reasoning-format deepseek` in `vllm_args` (see `models.json`) so the server outputs `<thinking>` tags that pi's openai-completions parser maps to thinking blocks.
+- **llama-server flags** — model-specific runtime flags live in `models.json`; the default models use MTP GGUFs with `--spec-type draft-mtp --spec-draft-n-max 2`, which requires `--parallel 1`.
 
 ## Repository Layout
 

@@ -46,13 +46,18 @@ def test_load_models_reads_repo_manifest():
         "Qwen/Qwen3.6-27B",
         "Qwen/Qwen3.5-4B",
     ]
-    assert models[0]["hf_repo"] == "unsloth/Qwen3.6-27B-GGUF"
-    assert models[0]["hf_revision"] == "82d411acf4a06cfb8d9b073a5211bf410bfc29bf"
-    assert models[0]["hf_file"] == "Qwen3.6-27B-Q4_K_M.gguf"
+    assert models[0]["hf_repo"] == "unsloth/Qwen3.6-27B-MTP-GGUF"
+    assert models[0]["hf_revision"] == "5cb35eb3dcbf52dbce5f87dbc64df6aaffadcace"
+    assert models[0]["hf_file"] == "Qwen3.6-27B-UD-Q4_K_XL.gguf"
     assert models[0]["instance_type"] == "g6e.2xlarge"
     assert "--ctx-size 262144" in models[0]["vllm_args"]
-    assert "--spec-default" in models[0]["vllm_args"]
-    assert models[1]["hf_revision"] == "c6913843e7fdab8b7f16447d42852c4a7a3fd98b"
+    assert "--spec-type draft-mtp" in models[0]["vllm_args"]
+    assert "--spec-draft-n-max 2" in models[0]["vllm_args"]
+    assert models[1]["hf_repo"] == "unsloth/Qwen3.5-4B-MTP-GGUF"
+    assert models[1]["hf_revision"] == "86835bf9949e4d14d6860f7910b1340ad4f271a9"
+    assert models[1]["hf_file"] == "Qwen3.5-4B-UD-Q4_K_XL.gguf"
+    assert "--spec-type draft-mtp" in models[1]["vllm_args"]
+    assert "--spec-draft-n-max 2" in models[1]["vllm_args"]
 
 
 def test_validate_model_requires_huggingface_revision():
@@ -71,6 +76,23 @@ def test_validate_model_requires_huggingface_revision():
         assert "hf_revision is required" in str(exc)
     else:
         raise AssertionError("expected validation failure")
+
+
+def test_validate_model_rejects_draft_mtp_with_parallel_above_one():
+    seed_models = _load_seed_models()
+
+    try:
+        seed_models.validate_model(
+            {
+                "name": "MTP/BadParallel",
+                "model_id": "/opt/models/model.gguf",
+                "vllm_args": "--spec-type draft-mtp --parallel 2",
+            }
+        )
+    except ValueError as exc:
+        assert "draft-mtp does not support --parallel/-np greater than 1" in str(exc)
+    else:
+        raise AssertionError("expected invalid draft-mtp parallel config")
 
 
 class _FakeTable:
