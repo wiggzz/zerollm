@@ -77,6 +77,7 @@ def chat_completion_payload(model: str, prompt: str, max_tokens: int) -> dict[st
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": max_tokens,
         "temperature": 0,
+        "reasoning_effort": "none",
     }
 
 
@@ -90,7 +91,7 @@ def main() -> None:
     parser.add_argument("--email", default=os.environ.get("SMOKE_EMAIL", "ci@zerollm.local"))
     parser.add_argument("--timeout-seconds", type=int, default=int(os.environ.get("SMOKE_TIMEOUT_SECONDS", "2400")))
     parser.add_argument("--retry-seconds", type=int, default=int(os.environ.get("SMOKE_RETRY_SECONDS", "30")))
-    parser.add_argument("--max-tokens", type=int, default=int(os.environ.get("SMOKE_MAX_TOKENS", "256")))
+    parser.add_argument("--max-tokens", type=int, default=int(os.environ.get("SMOKE_MAX_TOKENS", "1024")))
     args = parser.parse_args()
 
     if not args.region:

@@ -21,12 +21,13 @@ def test_chat_completion_payload_uses_larger_completion_budget():
     payload = aws_smoke_request.chat_completion_payload(
         "Qwen/Qwen3.5-4B",
         "Reply with exactly: zerollm smoke ok",
-        256,
+        1024,
     )
 
     assert payload == {
         "model": "Qwen/Qwen3.5-4B",
         "messages": [{"role": "user", "content": "Reply with exactly: zerollm smoke ok"}],
-        "max_tokens": 256,
+        "max_tokens": 1024,
         "temperature": 0,
+        "reasoning_effort": "none",
     }
