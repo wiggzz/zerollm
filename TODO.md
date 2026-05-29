@@ -10,6 +10,14 @@ instead of leaving them only in chat history or local notes.
 
 ## Bugs / Correctness
 
+- **Model sync should verify uploaded GGUF compatibility before smoke waits**.
+  The 2026-05-25 AWS smoke failure came from an upstream Hugging Face GGUF moving
+  from the March 2026 blob to a May 2026 blob that the deployed llama.cpp build
+  could not load (`missing tensor 'blk.32.ssm_conv1d.weight'`). Pinning
+  `hf_revision` fixes reproducibility, but model sync should also record expected
+  size/checksum and run a fast loader compatibility check so bad model artifacts
+  fail during sync rather than as a 40-minute cold-start timeout.
+
 - **High priority: Lambda Function URL streaming cannot cancel backend generation
   on client disconnect**. Live dev test on 2026-05-14: `curl --max-time 3` against
   `/v1/chat/completions` disconnected while receiving chunks, but the streaming

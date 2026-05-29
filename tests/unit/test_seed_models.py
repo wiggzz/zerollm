@@ -47,10 +47,30 @@ def test_load_models_reads_repo_manifest():
         "Qwen/Qwen3.5-4B",
     ]
     assert models[0]["hf_repo"] == "unsloth/Qwen3.6-27B-GGUF"
+    assert models[0]["hf_revision"] == "82d411acf4a06cfb8d9b073a5211bf410bfc29bf"
     assert models[0]["hf_file"] == "Qwen3.6-27B-Q4_K_M.gguf"
     assert models[0]["instance_type"] == "g6e.2xlarge"
     assert "--ctx-size 262144" in models[0]["vllm_args"]
     assert "--spec-default" in models[0]["vllm_args"]
+    assert models[1]["hf_revision"] == "c6913843e7fdab8b7f16447d42852c4a7a3fd98b"
+
+
+def test_validate_model_requires_huggingface_revision():
+    seed_models = _load_seed_models()
+
+    try:
+        seed_models.validate_model(
+            {
+                "name": "floating-model",
+                "hf_repo": "org/repo",
+                "hf_file": "model.gguf",
+                "model_id": "/opt/models/model.gguf",
+            }
+        )
+    except ValueError as exc:
+        assert "hf_revision is required" in str(exc)
+    else:
+        raise AssertionError("expected validation failure")
 
 
 class _FakeTable:
