@@ -155,6 +155,7 @@ data "aws_iam_policy_document" "github_deploy" {
       "imagebuilder:ListImagePipelineImages",
       "imagebuilder:ListWorkflowStepExecutions",
       "imagebuilder:StartImagePipelineExecution",
+      "imagebuilder:UpdateImagePipeline",
       "ssm:ListCommandInvocations",
     ]
     resources = ["*"]
