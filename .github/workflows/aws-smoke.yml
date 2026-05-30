@@ -69,7 +69,6 @@ jobs:
       INPUT_CFN_ROLE_ARN: ${{ inputs.cfn_role_arn || '' }}
       INPUT_HF_TOKEN_SECRET_ARN: ${{ inputs.hf_token_secret_arn || secrets.HF_TOKEN_SECRET_ARN }}
       AMI_BUILD_MODE: ${{ inputs.ami_build_mode || 'auto' }}
-      IMAGE_VERSION: ${{ format('1.3.{0}', github.run_number) }}
       CLEANUP: ${{ github.event_name != 'workflow_dispatch' || inputs.cleanup }}
       SMOKE_MODEL: ${{ inputs.model || 'Qwen/Qwen3.5-4B' }}
       SMOKE_TIMEOUT_SECONDS: ${{ inputs.smoke_timeout_seconds || '2400' }}
@@ -186,6 +185,14 @@ jobs:
         run: |
           aws cloudformation describe-stack-events \
             --stack-name "${STACK_NAME}" \
+            --query 'StackEvents[0:30].[Timestamp,ResourceStatus,LogicalResourceId,ResourceStatusReason]' \
+            --output table || true
+
+      - name: Show AMI pipeline events on failure
+        if: failure()
+        run: |
+          aws cloudformation describe-stack-events \
+            --stack-name "${AMI_PIPELINE_STACK:-zerollm-ami-pipeline}" \
             --query 'StackEvents[0:30].[Timestamp,ResourceStatus,LogicalResourceId,ResourceStatusReason]' \
             --output table || true
 
