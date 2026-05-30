@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # ---- Shared helpers ----
 
 _state_store = None
+_compute_backend = None
 
 
 def _get_state_store():
@@ -41,23 +42,25 @@ def _get_state_store():
 
 
 def _get_compute_backend():
-    """Build an EC2ComputeBackend from environment variables."""
-    import os
-    from control_plane.shared.config import get_env
-    from control_plane.backends.aws.compute import EC2ComputeBackend
+    """Build an EC2ComputeBackend from environment variables (cached)."""
+    global _compute_backend
+    if _compute_backend is None:
+        from control_plane.shared.config import get_env
+        from control_plane.backends.aws.compute import EC2ComputeBackend
 
-    return EC2ComputeBackend(
-        ami_id=get_env("GPU_AMI_ID"),
-        security_group_id=get_env("GPU_SECURITY_GROUP_ID"),
-        subnet_id=get_env("GPU_SUBNET_ID"),
-        instance_profile_arn=get_env("GPU_INSTANCE_PROFILE_ARN"),
-        vllm_api_key=os.environ.get("VLLM_API_KEY", ""),
-        models_bucket=os.environ.get("MODELS_BUCKET", ""),
-        instance_tags={
-            "zerollm:environment": os.environ.get("ZEROLLM_ENVIRONMENT", ""),
-            "zerollm:stack-id": os.environ.get("ZEROLLM_STACK_ID", ""),
-        },
-    )
+        _compute_backend = EC2ComputeBackend(
+            ami_id=get_env("GPU_AMI_ID"),
+            security_group_id=get_env("GPU_SECURITY_GROUP_ID"),
+            subnet_id=get_env("GPU_SUBNET_ID"),
+            instance_profile_arn=get_env("GPU_INSTANCE_PROFILE_ARN"),
+            vllm_api_key=os.environ.get("VLLM_API_KEY", ""),
+            models_bucket=os.environ.get("MODELS_BUCKET", ""),
+            instance_tags={
+                "Environment": os.environ.get("ZEROLLM_ENVIRONMENT", ""),
+                "zerollm:stack-id": os.environ.get("ZEROLLM_STACK_ID", ""),
+            },
+        )
+    return _compute_backend
 
 
 def _api_response(status_code: int, body: dict | str, headers: dict | None = None) -> dict:
@@ -153,13 +156,11 @@ def orchestrator_handler(event, context):
     action = event.get("action", "")
 
     if action == "scale_up":
-        import os
         model_name = event["model"]
-        result = scale_up(model_name, state, compute, vllm_api_key=os.environ.get("VLLM_API_KEY", ""))
+        result = scale_up(model_name, state, compute)
         return {"statusCode": 200, "body": json.dumps(result, default=_json_default)}
 
     elif action == "check_health":
-        import os
         result = check_health(state, compute, api_key=os.environ.get("VLLM_API_KEY", ""))
         return {"statusCode": 200, "body": json.dumps(result, default=_json_default)}
 
@@ -289,11 +290,13 @@ def cluster_handler(event, context):
     if method == "POST" and path == "/api/cluster/scale":
         body = json.loads(event.get("body", "{}"))
         trigger = _make_trigger_scale_up()
+        compute = _get_compute_backend()
         try:
             result = manual_scale(
                 model=body.get("model", ""),
                 action=body.get("action", "up"),
                 state=state,
+                compute=compute,
                 trigger_scale_up=trigger,
             )
         except ValueError as exc:

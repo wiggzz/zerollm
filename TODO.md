@@ -51,13 +51,6 @@ instead of leaving them only in chat history or local notes.
   from S3. Make S3-backed seeding the default when `ModelsBucketName` exists, or
   preserve an existing `s3_key` unless the operator explicitly clears it.
 
-- **`manual_scale down` skips actual EC2 termination** (`cluster.py:75`).
-  It calls `state.update_instance(status="terminated")` directly without calling
-  `compute.terminate()`. The instance is marked gone in DynamoDB but keeps running
-  on EC2 and billing until the next scale_down sweep picks it up (which it won't,
-  because the status is already "terminated"). Fix: pass `compute` into `manual_scale`
-  and call it, matching how `scale_down` works.
-
 - **DynamoDB `list_instances` with status-only filter does a full table scan** (`state.py:48`).
   The `model-status-index` GSI only supports hash+range queries on (model, status).
   A status-only lookup (e.g. `check_health` fetching all "starting" instances) falls
@@ -98,8 +91,6 @@ instead of leaving them only in chat history or local notes.
   (placeholder-only record before EC2 call returns). The timeout path skips the
   `compute.terminate()` call in this case — no test verifies that.
 
-- **`manual_scale down` has no test for the EC2 termination gap** described above.
-
 - **`check_health` EventBridge handler path in `handlers.py`** has no unit test
   — only the core `check_health()` function is covered. Should add a handler-level
   test that exercises the `"action": "check_health"` dispatch and JSON serialization.
@@ -120,10 +111,6 @@ instead of leaving them only in chat history or local notes.
 
 ## Design / Encapsulation
 
-- **`manual_scale down` cannot terminate real instances by design** because the
-  cluster API only receives `state` and `trigger_scale_up`, not `compute`. Fixing the
-  bug above requires changing the core signature and the AWS handler dependency wiring.
-
 - **`trigger_scale_up` is a bare callable passed through the cluster API**
   (`handlers.py`, `cluster.py`, tests). It's effectively a thin wrapper around a
   Lambda async invoke.
@@ -131,19 +118,8 @@ instead of leaving them only in chat history or local notes.
   explicit and testable. Not critical but the current design makes it easy to pass
   the wrong thing silently.
 
-- **`handlers.py` builds `EC2ComputeBackend` inline on every invocation** via
-  `_get_compute_backend()`, unlike `_get_state_store()` which is cached. The compute
-  backend is stateless so this is harmless, but it's inconsistent and creates a new
-  boto3 client on every handler call. Should be cached the same way the state store is.
-
 - **`instance-logs.sh` hardcodes port 8000** for the health check curl. It should
   use the same port constant/convention as the rest of the codebase.
-
-- **`DynamoDBStateStore` exposes `._models` (the raw Table object)** and
-  `test_localstack_handlers.py` uses it directly (`state._models.put_item(...)`).
-  That leaks the DynamoDB implementation detail into tests. `DynamoDBStateStore`
-  should expose a `put_model_config` method matching the `InMemoryStateStore`, and
-  the interface should include it.
 
 ---
 
@@ -256,11 +232,6 @@ instead of leaving them only in chat history or local notes.
 - **No CloudWatch alarm on instance startup failures**. If `check_health` terminates
   an instance after timeout, it logs an error but there's no metric or alarm. An
   operator won't know a model is stuck in a boot failure loop until a user reports 503s.
-
-- **GPU EC2 instances are missing a project-level tag**. Instances are tagged with
-  `Name` and `zerollm:model`, but not `Project=zerollm`, so account queries such as
-  `describe-instances --filters Name=tag:Project,Values=zerollm` miss active/stopped
-  ZeroLLM capacity. Add a stable project/environment tag set to launched instances.
 
 - **`make status` shows all instances including terminated ones** from DynamoDB.
   `cluster.py` filters terminated instances out of the API response, and
@@ -386,13 +357,4 @@ instead of leaving them only in chat history or local notes.
   multiple phases and the `GoogleClientId` parameter is wired throughout the template
   for something that isn't hooked up yet.
 
-- **`scale_up` accepts a `vllm_api_key` parameter** it no longer uses (the key was
-  needed for the old synchronous `poll_health` call). The parameter should be removed
-  from `scale_up`'s signature; `check_health` takes `api_key` instead.
 
-- **The `import time` inside `launch()` in `compute.py`** (line 82) is a local import
-  for a stdlib module — no reason for it to be local. Move it to the top of the file.
-
-- **`handlers.py` has `import os` duplicated** inside both `orchestrator_handler` and
-  `_get_compute_backend` function bodies. These should either be module-level imports
-  or at least deduplicated.

@@ -51,6 +51,10 @@ class StateStore(Protocol):
         """Get configuration for a model by name."""
         ...
 
+    def put_model_config(self, config: dict) -> None:
+        """Store or update a model configuration."""
+        ...
+
     def list_model_configs(self) -> list[dict]:
         """List all configured models."""
         ...

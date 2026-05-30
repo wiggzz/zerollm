@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import hashlib
+import time
 from collections.abc import Mapping
 
 import boto3
@@ -50,6 +51,7 @@ class EC2ComputeBackend:
             try:
                 tags = [
                     {"Key": "Name", "Value": f"zerollm-{model_config['name']}"},
+                    {"Key": "Project", "Value": "zerollm"},
                     {"Key": "zerollm:model", "Value": model_config["name"]},
                 ]
                 tags.extend(
@@ -109,7 +111,6 @@ class EC2ComputeBackend:
         # Public IP is used since Lambda runs outside the VPC.
         # It may not be present in the run_instances response yet, so poll
         # describe_instances until it appears (usually within a few seconds).
-        import time
         public_ip = instance.get("PublicIpAddress", "")
         if not public_ip:
             for _ in range(10):
@@ -155,8 +156,6 @@ class EC2ComputeBackend:
         }
 
     def _public_ip(self, instance_id: str) -> str:
-        import time
-
         public_ip = ""
         for _ in range(10):
             desc = self._ec2.describe_instances(InstanceIds=[instance_id])

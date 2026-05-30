@@ -30,7 +30,6 @@ def scale_up(
     model_name: str,
     state: StateStore,
     compute: ComputeBackend,
-    vllm_api_key: str = "",
 ) -> dict:
     """Launch a GPU instance for the given model (idempotent).
 

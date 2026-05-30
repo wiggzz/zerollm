@@ -193,6 +193,10 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub "zerollm-gpu-${Environment}"
+        - Key: Project
+          Value: zerollm
+        - Key: Environment
+          Value: !Ref Environment
 
   # --- GPU Instance IAM ---
   ModelsBucket:

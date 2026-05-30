@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from control_plane.core.interfaces import StateStore
+from control_plane.core.interfaces import ComputeBackend, StateStore
 
 
 def get_cluster_state(state: StateStore) -> dict:
@@ -56,6 +56,7 @@ def manual_scale(
     model: str,
     action: str,
     state: StateStore,
+    compute: ComputeBackend,
     trigger_scale_up,
 ) -> dict:
     """Manually request a scale action for a model."""
@@ -90,6 +91,9 @@ def manual_scale(
             }
 
         target = candidates[0]
+        provider_id = target.get("provider_instance_id")
+        if provider_id:
+            compute.terminate(provider_id)
         state.update_instance(target["instance_id"], status="terminated")
         return {
             "ok": True,
