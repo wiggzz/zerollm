@@ -20,11 +20,11 @@ Parameters:
     Description: Instance type used by Image Builder during AMI creation (needs network bandwidth for large downloads)
   ImageVersion:
     Type: String
-    Default: 1.3.14
+    Default: 1.3.15
     Description: Semantic version for Image Builder component/recipe (bump on recipe changes)
   LlamaCppDockerImage:
     Type: String
-    Default: ghcr.io/ggml-org/llama.cpp:server-cuda-b9404
+    Default: ghcr.io/ggml-org/llama.cpp:server-cuda13-b9404
     Description: llama.cpp server image to bake into GPU AMIs
   PipelineStatus:
     Type: String
@@ -154,9 +154,12 @@ Resources:
                       systemctl start docker
 
                       # Pre-pull the llama.cpp server image so the first start is fast.
-                      # server-cuda bundles CUDA libs — no compile step, no CPU arch mismatch.
+                      # server-cuda13 bundles CUDA libs — no compile step, no CPU arch mismatch.
                       # Pin the build so newly-supported GGUF architectures are reproducible.
                       docker pull ${LlamaCppDockerImage}
+                      docker run --rm ${LlamaCppDockerImage} --version
+                      docker run --rm ${LlamaCppDockerImage} --help 2>&1 | tee /tmp/llama-server-help.txt
+                      grep -q -- 'draft-mtp' /tmp/llama-server-help.txt
 
                       # Models are downloaded from S3 at instance boot (not baked into the AMI).
                       # This avoids EBS snapshot lazy-initialization (~33 MB/s) by writing fresh

@@ -89,7 +89,7 @@ def main() -> None:
     parser.add_argument("--model", default=os.environ.get("SMOKE_MODEL", "Qwen/Qwen3.5-4B"))
     parser.add_argument("--prompt", default=os.environ.get("SMOKE_PROMPT", "Reply with exactly: zerollm smoke ok"))
     parser.add_argument("--email", default=os.environ.get("SMOKE_EMAIL", "ci@zerollm.local"))
-    parser.add_argument("--timeout-seconds", type=int, default=int(os.environ.get("SMOKE_TIMEOUT_SECONDS", "2400")))
+    parser.add_argument("--timeout-seconds", type=int, default=int(os.environ.get("SMOKE_TIMEOUT_SECONDS", "900")))
     parser.add_argument("--retry-seconds", type=int, default=int(os.environ.get("SMOKE_RETRY_SECONDS", "30")))
     parser.add_argument("--max-tokens", type=int, default=int(os.environ.get("SMOKE_MAX_TOKENS", "1024")))
     args = parser.parse_args()
