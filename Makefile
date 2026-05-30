@@ -16,6 +16,12 @@ setup-dev:
 sync-requirements:
 	uv export --no-dev --no-hashes --no-header --output-file requirements.txt
 
+prepare-sam-source: sync-requirements
+	rm -rf .sam-source
+	mkdir -p .sam-source
+	cp -r control_plane .sam-source/
+	cp requirements.txt .sam-source/
+
 infra-deploy:
 	./infrastructure/deploy.sh $(ENVIRONMENT)
 
@@ -42,7 +48,7 @@ test-unit:
 test-e2e:
 	uv run --no-sync pytest tests/e2e/ -v
 
-build: sync-requirements
+build: prepare-sam-source
 	sam build
 
 deploy:
@@ -68,4 +74,4 @@ status:
 	AWS_REGION="$(AWS_REGION)" ENVIRONMENT="$(ENVIRONMENT)" ./scripts/cluster-status.sh
 
 clean:
-	rm -rf .aws-sam/
+	rm -rf .aws-sam/ .sam-source/

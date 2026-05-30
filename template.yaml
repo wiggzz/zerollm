@@ -322,7 +322,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: control_plane.backends.aws.handlers.orchestrator_handler
-      CodeUri: ./
+      CodeUri: .sam-source/
       Timeout: 300
       MemorySize: 256
       Environment:
@@ -359,7 +359,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: control_plane.backends.aws.handlers.gpu_instance_cleanup_handler
-      CodeUri: ./
+      CodeUri: .sam-source/
       Timeout: 60
       Environment:
         Variables:
@@ -386,7 +386,7 @@ Resources:
     Properties:
       Runtime: nodejs20.x
       Handler: control_plane/backends/aws/streaming_router.handler
-      CodeUri: ./
+      CodeUri: .sam-source/
       Timeout: 900
       Environment:
         Variables:
@@ -438,7 +438,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: control_plane.backends.aws.handlers.authorizer_handler
-      CodeUri: ./
+      CodeUri: .sam-source/
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref ApiKeysTable
@@ -447,7 +447,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: control_plane.backends.aws.handlers.keys_handler
-      CodeUri: ./
+      CodeUri: .sam-source/
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref ApiKeysTable
@@ -475,7 +475,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Handler: control_plane.backends.aws.handlers.cluster_handler
-      CodeUri: ./
+      CodeUri: .sam-source/
       Environment:
         Variables:
           ORCHESTRATOR_FUNCTION_NAME: !Ref OrchestratorFunction

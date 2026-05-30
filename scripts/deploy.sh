@@ -225,6 +225,13 @@ echo "Using GpuSubnetId=${GPU_SUBNET_ID}"
 echo "Using GpuVpcId=${vpc_id}"
 
 uv export --project control_plane --no-dev --no-hashes --no-header --output-file requirements.txt
+
+# Build a minimal source directory for SAM (only what Lambdas need)
+rm -rf .sam-source
+mkdir -p .sam-source
+cp -r control_plane .sam-source/
+cp requirements.txt .sam-source/
+
 sam build
 
 param_overrides=(
