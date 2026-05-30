@@ -20,11 +20,11 @@ Parameters:
     Description: Instance type used by Image Builder during AMI creation (needs network bandwidth for large downloads)
   ImageVersion:
     Type: String
-    Default: 1.3.13
+    Default: 1.3.14
     Description: Semantic version for Image Builder component/recipe (bump on recipe changes)
   LlamaCppDockerImage:
     Type: String
-    Default: ghcr.io/ggml-org/llama.cpp:server-cuda-b9222
+    Default: ghcr.io/ggml-org/llama.cpp:server-cuda-b9404
     Description: llama.cpp server image to bake into GPU AMIs
   PipelineStatus:
     Type: String
