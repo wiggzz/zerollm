@@ -140,6 +140,8 @@ data "aws_iam_policy_document" "github_deploy" {
     sid = "DeployDiscovery"
     actions = [
       "ec2:DescribeSecurityGroups",
+      "ec2:DescribeImageAttribute",
+      "ec2:DescribeImages",
       "ec2:DescribeSubnets",
       "imagebuilder:CreateComponent",
       "imagebuilder:CreateImageRecipe",
