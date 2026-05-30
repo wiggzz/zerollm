@@ -10,6 +10,7 @@ venv/
 
 # SAM
 .aws-sam/
+.sam-source/
 
 # Node (UI)
 node_modules/
