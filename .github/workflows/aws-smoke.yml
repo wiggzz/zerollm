@@ -159,6 +159,15 @@ jobs:
           set -o pipefail
           ./scripts/deploy.sh | tee deploy.log
 
+      - name: Show deploy log on failure
+        if: failure()
+        run: |
+          if [[ -f deploy.log ]]; then
+            tail -n 200 deploy.log
+          else
+            echo "No deploy.log found."
+          fi
+
       - name: Wait for model sync
         run: |
           build_id="$(awk -F': ' '/Started model sync build:/ {print $2}' deploy.log | tail -1)"
@@ -180,21 +189,29 @@ jobs:
       - name: Run LLM smoke request
         run: uv run --no-sync python scripts/aws_smoke_request.py
 
-      - name: Show stack events on failure
+      - name: Show smoke stack events on failure
         if: failure()
         run: |
+          if ! aws cloudformation describe-stacks --stack-name "${STACK_NAME}" >/dev/null 2>&1; then
+            echo "Smoke stack ${STACK_NAME} does not exist yet; deploy likely failed before app stack creation."
+            exit 0
+          fi
           aws cloudformation describe-stack-events \
             --stack-name "${STACK_NAME}" \
             --query 'StackEvents[0:30].[Timestamp,ResourceStatus,LogicalResourceId,ResourceStatusReason]' \
-            --output table || true
+            --output table
 
       - name: Show AMI pipeline events on failure
         if: failure()
         run: |
+          if ! aws cloudformation describe-stacks --stack-name "${AMI_PIPELINE_STACK:-zerollm-ami-pipeline}" >/dev/null 2>&1; then
+            echo "AMI pipeline stack ${AMI_PIPELINE_STACK:-zerollm-ami-pipeline} does not exist or is not visible."
+            exit 0
+          fi
           aws cloudformation describe-stack-events \
             --stack-name "${AMI_PIPELINE_STACK:-zerollm-ami-pipeline}" \
             --query 'StackEvents[0:30].[Timestamp,ResourceStatus,LogicalResourceId,ResourceStatusReason]' \
-            --output table || true
+            --output table
 
       - name: Refresh AWS credentials before cleanup
         if: always() && env.CLEANUP == 'true' && env.AWS_ROLE_TO_ASSUME != ''
