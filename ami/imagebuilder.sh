@@ -19,7 +19,7 @@ set -euo pipefail
 #   BUILDER_SUBNET_ID      (auto-selected if omitted)
 #   BUILDER_SECURITY_GROUP_ID (auto-selected if omitted)
 #   BUILDER_INSTANCE_TYPE  (default: t3.small)
-#   IMAGE_VERSION          (default: 1.0.2)
+#   IMAGE_VERSION          (default from template)
 #   LLAMA_CPP_DOCKER_IMAGE (default from template)
 #   PIPELINE_STATUS        (default: DISABLED)
 
@@ -352,11 +352,11 @@ print_latest_ami() {
     aws imagebuilder list-image-pipeline-images \
       --region "${AWS_REGION}" \
       --image-pipeline-arn "${pipeline_arn}" \
-      --query "sort_by(imageSummaryList[?state.status=='AVAILABLE'],&dateCreated)[-1].arn" \
+      --query "sort_by(imageSummaryList[?state.status=='AVAILABLE' && contains(arn, '/${IMAGE_VERSION}/')],&dateCreated)[-1].arn" \
       --output text
   )"
   if [[ -z "${latest_image_arn}" || "${latest_image_arn}" == "None" ]]; then
-    echo "No images found for pipeline ${pipeline_arn}" >&2
+    echo "No available images found for pipeline ${pipeline_arn} at recipe version ${IMAGE_VERSION}" >&2
     exit 1
   fi
 
