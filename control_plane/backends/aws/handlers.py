@@ -148,7 +148,12 @@ def orchestrator_handler(event, context):
     Scale-down event:   {"source": "schedule", "action": "scale_down"}
     Check-health event: {"source": "schedule", "action": "check_health"}
     """
-    from control_plane.core.orchestrator import scale_up, scale_down, check_health
+    from control_plane.core.orchestrator import (
+        scale_up,
+        scale_down,
+        manual_scale_down,
+        check_health,
+    )
 
     state = _get_state_store()
     compute = _get_compute_backend()
@@ -158,6 +163,11 @@ def orchestrator_handler(event, context):
     if action == "scale_up":
         model_name = event["model"]
         result = scale_up(model_name, state, compute)
+        return {"statusCode": 200, "body": json.dumps(result, default=_json_default)}
+
+    elif action == "manual_scale_down":
+        model_name = event["model"]
+        result = manual_scale_down(model_name, state, compute)
         return {"statusCode": 200, "body": json.dumps(result, default=_json_default)}
 
     elif action == "check_health":
@@ -205,6 +215,24 @@ def _make_trigger_scale_up():
             FunctionName=function_name,
             InvocationType="Event",  # async
             Payload=json.dumps({"action": "scale_up", "model": model_name}),
+        )
+
+    return trigger
+
+
+def _make_trigger_scale_down():
+    """Return a callable that async-invokes the Orchestrator Lambda for manual scale-down."""
+    import boto3
+    from control_plane.shared.config import ORCHESTRATOR_FUNCTION_NAME
+
+    client = boto3.client("lambda")
+    function_name = ORCHESTRATOR_FUNCTION_NAME()
+
+    def trigger(model_name: str):
+        client.invoke(
+            FunctionName=function_name,
+            InvocationType="Event",
+            Payload=json.dumps({"action": "manual_scale_down", "model": model_name}),
         )
 
     return trigger
@@ -289,15 +317,15 @@ def cluster_handler(event, context):
 
     if method == "POST" and path == "/api/cluster/scale":
         body = json.loads(event.get("body", "{}"))
-        trigger = _make_trigger_scale_up()
-        compute = _get_compute_backend()
+        trigger_up = _make_trigger_scale_up()
+        trigger_down = _make_trigger_scale_down()
         try:
             result = manual_scale(
                 model=body.get("model", ""),
                 action=body.get("action", "up"),
                 state=state,
-                compute=compute,
-                trigger_scale_up=trigger,
+                trigger_scale_up=trigger_up,
+                trigger_scale_down=trigger_down,
             )
         except ValueError as exc:
             return _api_response(400, {"error": str(exc)})

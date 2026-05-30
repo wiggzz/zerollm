@@ -67,6 +67,34 @@ def test_scale_up_unknown_model_raises(state, compute):
         assert "Unknown model" in str(exc)
 
 
+def test_manual_scale_down_terminates_one_instance(state, compute):
+    state.put_instance(
+        {
+            "instance_id": "model#Qwen/Qwen3-32B",
+            "provider_instance_id": "i-ready",
+            "model": "Qwen/Qwen3-32B",
+            "status": "ready",
+            "ip": "127.0.0.1",
+            "instance_type": "g5.xlarge",
+            "launched_at": 1,
+            "last_request_at": 1,
+        }
+    )
+
+    result = orchestrator.manual_scale_down("Qwen/Qwen3-32B", state, compute)
+
+    assert result["terminated_instance_id"] == "model#Qwen/Qwen3-32B"
+    assert state.get_instance("model#Qwen/Qwen3-32B")["status"] == "terminated"
+    assert "i-ready" in compute.terminated
+
+
+def test_manual_scale_down_reports_no_running_instances(state, compute):
+    result = orchestrator.manual_scale_down("Qwen/Qwen3-32B", state, compute)
+
+    assert result["message"] == "no running instances"
+    assert compute.terminated == []
+
+
 def test_scale_up_deduplicates_when_claim_already_exists(state, compute):
     state.put_instance(
         {

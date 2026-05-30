@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from control_plane.core.interfaces import ComputeBackend, StateStore
+from control_plane.core.interfaces import StateStore
 
 
 def get_cluster_state(state: StateStore) -> dict:
@@ -56,8 +56,8 @@ def manual_scale(
     model: str,
     action: str,
     state: StateStore,
-    compute: ComputeBackend,
     trigger_scale_up,
+    trigger_scale_down,
 ) -> dict:
     """Manually request a scale action for a model."""
     if not model:
@@ -79,27 +79,12 @@ def manual_scale(
         }
 
     if normalized_action == "down":
-        candidates = state.list_instances(model=model, status="ready")
-        if not candidates:
-            candidates = state.list_instances(model=model, status="starting")
-        if not candidates:
-            return {
-                "ok": True,
-                "model": model,
-                "action": "down",
-                "message": "no running instances",
-            }
-
-        target = candidates[0]
-        provider_id = target.get("provider_instance_id")
-        if provider_id:
-            compute.terminate(provider_id)
-        state.update_instance(target["instance_id"], status="terminated")
+        trigger_scale_down(model)
         return {
             "ok": True,
             "model": model,
             "action": "down",
-            "terminated_instance_id": target["instance_id"],
+            "message": "scale-down requested",
         }
 
     raise ValueError(f"Unsupported scale action: {action}")
