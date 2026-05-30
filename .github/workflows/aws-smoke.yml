@@ -40,9 +40,9 @@ on:
         required: true
         default: true
       ami_build_mode:
-        description: AMI selection mode. Use build after AMI recipe/runtime changes.
+        description: AMI selection mode. Auto builds when no AMI exists for the current recipe version.
         required: true
-        default: latest
+        default: auto
       smoke_timeout_seconds:
         description: Max seconds to wait for cold start and first response
         required: true
