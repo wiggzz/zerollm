@@ -148,6 +148,8 @@ data "aws_iam_policy_document" "github_deploy" {
       "imagebuilder:DeleteComponent",
       "imagebuilder:DeleteImageRecipe",
       "imagebuilder:GetComponent",
+      "imagebuilder:GetInfrastructureConfiguration",
+      "imagebuilder:GetDistributionConfiguration",
       "imagebuilder:GetWorkflowExecution",
       "imagebuilder:GetWorkflowStepExecution",
       "imagebuilder:GetImage",
