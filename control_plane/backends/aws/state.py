@@ -112,6 +112,9 @@ class DynamoDBStateStore:
         resp = self._models.get_item(Key={"name": model_name})
         return resp.get("Item")
 
+    def put_model_config(self, config: dict) -> None:
+        self._models.put_item(Item=config)
+
     def list_model_configs(self) -> list[dict]:
         resp = self._models.scan()
         return resp.get("Items", [])

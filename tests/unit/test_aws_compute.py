@@ -62,7 +62,7 @@ def test_launch_tags_instance_and_volume_with_stack_ownership():
     backend._vllm_api_key = ""
     backend._models_bucket = ""
     backend._instance_tags = {
-        "zerollm:environment": "ci123",
+        "Environment": "ci123",
         "zerollm:stack-id": "arn:aws:cloudformation:us-east-2:123:stack/zerollm-smoke/abc",
     }
 
@@ -80,5 +80,6 @@ def test_launch_tags_instance_and_volume_with_stack_ownership():
     for spec in tag_specs:
         tags = {tag["Key"]: tag["Value"] for tag in spec["Tags"]}
         assert tags["zerollm:model"] == "Qwen/Qwen3.5-4B"
-        assert tags["zerollm:environment"] == "ci123"
+        assert tags["Project"] == "zerollm"
+        assert tags["Environment"] == "ci123"
         assert tags["zerollm:stack-id"] == "arn:aws:cloudformation:us-east-2:123:stack/zerollm-smoke/abc"

@@ -259,7 +259,8 @@ deploy_args=(
   --stack-name "${STACK_NAME}" \
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
   --resolve-s3 \
-  --parameter-overrides "${param_overrides[@]}"
+  --parameter-overrides "${param_overrides[@]}" \
+  --tags "Project=zerollm" "Environment=${ENVIRONMENT}"
 )
 
 if [[ -n "${CFN_ROLE_ARN:-}" ]]; then

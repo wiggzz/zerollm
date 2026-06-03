@@ -36,7 +36,7 @@ def test_get_cluster_state_reports_cold_and_ready_models(state):
     assert by_name["Meta/Llama-3"]["status"] == "cold"
 
 
-def test_manual_scale_up_triggers_orchestrator(state):
+def test_manual_scale_up_triggers_orchestrator(state, compute):
     triggered = []
 
     result = manual_scale(
@@ -44,13 +44,16 @@ def test_manual_scale_up_triggers_orchestrator(state):
         action="up",
         state=state,
         trigger_scale_up=triggered.append,
+        trigger_scale_down=lambda *_: None,
     )
 
     assert result["ok"] is True
     assert triggered == ["Qwen/Qwen3-32B"]
 
 
-def test_manual_scale_down_terminates_one_instance(state):
+def test_manual_scale_down_triggers_orchestrator(state, compute):
+    triggered = []
+
     state.put_instance(
         {
             "instance_id": "model#Qwen/Qwen3-32B",
@@ -69,13 +72,21 @@ def test_manual_scale_down_terminates_one_instance(state):
         action="down",
         state=state,
         trigger_scale_up=lambda *_: None,
+        trigger_scale_down=triggered.append,
     )
 
-    assert result["terminated_instance_id"] == "model#Qwen/Qwen3-32B"
-    assert state.get_instance("model#Qwen/Qwen3-32B")["status"] == "terminated"
+    assert result["message"] == "scale-down requested"
+    assert state.get_instance("model#Qwen/Qwen3-32B")["status"] == "ready"
+    assert triggered == ["Qwen/Qwen3-32B"]
 
 
 @pytest.mark.parametrize("model,action", [("", "up"), ("missing/model", "up"), ("Qwen/Qwen3-32B", "bad")])
-def test_manual_scale_rejects_invalid_inputs(state, model, action):
+def test_manual_scale_rejects_invalid_inputs(state, compute, model, action):
     with pytest.raises(ValueError):
-        manual_scale(model=model, action=action, state=state, trigger_scale_up=lambda *_: None)
+        manual_scale(
+            model=model,
+            action=action,
+            state=state,
+            trigger_scale_up=lambda *_: None,
+            trigger_scale_down=lambda *_: None,
+        )

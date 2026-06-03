@@ -30,7 +30,6 @@ def scale_up(
     model_name: str,
     state: StateStore,
     compute: ComputeBackend,
-    vllm_api_key: str = "",
 ) -> dict:
     """Launch a GPU instance for the given model (idempotent).
 
@@ -293,6 +292,40 @@ def scale_down(state: StateStore, compute: ComputeBackend) -> dict[str, list[str
         results["terminated"].append(inst["instance_id"])
 
     return results
+
+
+def manual_scale_down(
+    model_name: str,
+    state: StateStore,
+    compute: ComputeBackend,
+) -> dict:
+    """Terminate one active instance for a model on explicit user request."""
+    model_config = state.get_model_config(model_name)
+    if model_config is None:
+        raise ValueError(f"Unknown model: {model_name}")
+
+    candidates = state.list_instances(model=model_name, status="ready")
+    if not candidates:
+        candidates = state.list_instances(model=model_name, status="starting")
+    if not candidates:
+        return {
+            "ok": True,
+            "model": model_name,
+            "action": "down",
+            "message": "no running instances",
+        }
+
+    target = candidates[0]
+    provider_id = target.get("provider_instance_id")
+    if provider_id:
+        compute.terminate(provider_id)
+    state.update_instance(target["instance_id"], status="terminated")
+    return {
+        "ok": True,
+        "model": model_name,
+        "action": "down",
+        "terminated_instance_id": target["instance_id"],
+    }
 
 
 def _recover_stopping_instances(state: StateStore, compute: ComputeBackend, now: int) -> None:

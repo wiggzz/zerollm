@@ -57,6 +57,7 @@ def manual_scale(
     action: str,
     state: StateStore,
     trigger_scale_up,
+    trigger_scale_down,
 ) -> dict:
     """Manually request a scale action for a model."""
     if not model:
@@ -78,24 +79,12 @@ def manual_scale(
         }
 
     if normalized_action == "down":
-        candidates = state.list_instances(model=model, status="ready")
-        if not candidates:
-            candidates = state.list_instances(model=model, status="starting")
-        if not candidates:
-            return {
-                "ok": True,
-                "model": model,
-                "action": "down",
-                "message": "no running instances",
-            }
-
-        target = candidates[0]
-        state.update_instance(target["instance_id"], status="terminated")
+        trigger_scale_down(model)
         return {
             "ok": True,
             "model": model,
             "action": "down",
-            "terminated_instance_id": target["instance_id"],
+            "message": "scale-down requested",
         }
 
     raise ValueError(f"Unsupported scale action: {action}")

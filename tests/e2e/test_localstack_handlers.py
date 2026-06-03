@@ -23,8 +23,8 @@ def _build_state(localstack_env):
 
 
 def _seed_model(state):
-    state._models.put_item(
-        Item={
+    state.put_model_config(
+        {
             "name": MODEL_NAME,
             "instance_type": "g5.xlarge",
             "idle_timeout": 1,
