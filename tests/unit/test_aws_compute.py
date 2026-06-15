@@ -12,7 +12,8 @@ def _backend(models_bucket: str = "zerollm-models-dev-123") -> EC2ComputeBackend
     return backend
 
 
-def test_build_user_data_downloads_s3_model_and_logs_cold_start_steps():
+def test_build_user_data_writes_env_and_enables_service():
+    """Cloud-init writes env file and enables service; model fetch is in start_vllm.sh."""
     user_data = _backend()._build_user_data(
         {
             "name": "Qwen/Qwen3.5-27B",
@@ -22,28 +23,16 @@ def test_build_user_data_downloads_s3_model_and_logs_cold_start_steps():
         }
     )
 
-    assert "aws s3 cp s3://zerollm-models-dev-123/model.gguf /opt/dlami/nvme/models/model.gguf" in user_data
-    assert "if test -s /opt/dlami/nvme/models/model.gguf" in user_data
-    assert "log_step 'model_download_skip_existing path=/opt/dlami/nvme/models/model.gguf size_bytes='" in user_data
-    assert "log_step 'model_download_start bucket=zerollm-models-dev-123 key=model.gguf'" in user_data
-    assert "log_step 'model_download_done path=/opt/dlami/nvme/models/model.gguf size_bytes='" in user_data
+    # Cloud-init writes env with S3 creds for start_vllm.sh to use
+    assert "S3_BUCKET=zerollm-models-dev-123" in user_data
+    assert "S3_KEY=model.gguf" in user_data
+    # Cloud-init does NOT download model anymore (unified in start_vllm.sh)
+    assert "aws s3 cp" not in user_data
+    # Cloud-init enables vllm service (start_vllm.sh handles model fetch)
+    assert "systemctl enable vllm" in user_data
+    assert "systemctl start vllm" not in user_data  # systemd auto-starts on boot
     assert 'log_group_name": "/zerollm/coldstart"' in user_data
     assert "--api-key secret" in user_data
-    assert "systemctl enable vllm" in user_data
-
-
-def test_build_user_data_validates_prebaked_model_when_s3_key_absent():
-    user_data = _backend()._build_user_data(
-        {
-            "name": "Qwen/Qwen3.5-4B",
-            "model_id": "/opt/models/small.gguf",
-            "vllm_args": "-ngl 99 --ctx-size 131072 --parallel 1 --jinja",
-        }
-    )
-
-    assert "aws s3 cp" not in user_data
-    assert "log_step 'model_prebaked_expected path=/opt/dlami/nvme/models/small.gguf'" in user_data
-    assert "test -s /opt/dlami/nvme/models/small.gguf" in user_data
 
 
 def test_launch_tags_instance_and_volume_with_stack_ownership():

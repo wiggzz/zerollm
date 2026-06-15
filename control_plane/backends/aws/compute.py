@@ -174,34 +174,12 @@ class EC2ComputeBackend:
         model_name = model_config.get("name", model_id)
         model_name_safe = model_name.replace("/", "_")
 
-        # Resolve to NVMe instance store path.
+        # Model download is handled by start_vllm.sh at service start time
+        # (unifies cold start and warm start paths).
         # model_id from config uses /opt/models/ prefix (Docker mount path).
         # On the host, the actual storage is /opt/dlami/nvme/models/.
-        nvme_path = model_id.replace("/opt/models", "/opt/dlami/nvme/models")
-
-        # If a models bucket and s3_key are present, download from S3 at boot.
-        # Models are stored on NVMe instance store for fast reads (~4 GB/s).
-        # On warm start (stop/start), NVMe is wiped so the model is re-downloaded.
-        # This is faster than the EBS lazy-initialization penalty (~15 min for 18GB).
         s3_key = model_config.get("s3_key", "")
-        if self._models_bucket and s3_key:
-            fetch_model = (
-                f"log_step 'model_download_start bucket={self._models_bucket} key={s3_key}'\n"
-                f"mkdir -p /opt/dlami/nvme/models\n"
-                f"if test -s {nvme_path}; then\n"
-                f"  log_step 'model_download_skip_existing path={nvme_path} size_bytes='$(stat -c%s {nvme_path})\n"
-                f"else\n"
-                f"  aws s3 cp s3://{self._models_bucket}/{s3_key} {nvme_path} --no-progress\n"
-                f"  sync {nvme_path}\n"
-                f"fi\n"
-                f"log_step 'model_download_done path={nvme_path} size_bytes='$(stat -c%s {nvme_path})"
-            )
-        else:
-            fetch_model = (
-                f"log_step 'model_prebaked_expected path={nvme_path}'\n"
-                f"test -s {nvme_path}\n"
-                f"log_step 'model_prebaked_found path={nvme_path} size_bytes='$(stat -c%s {nvme_path})"
-            )
+        s3_bucket = self._models_bucket
 
         return f"""#!/bin/bash
 set -euo pipefail
@@ -212,10 +190,12 @@ log_step() {{
 
 log_step 'cloud_init_start model={model_name}'
 
-# Write model config
+# Write model config (S3 creds used by start_vllm.sh for warm-start re-download)
 cat > /etc/zerollm-model.env << 'MODELEOF'
 MODEL_NAME={model_id}
 VLLM_ARGS="{vllm_args}"
+S3_BUCKET={s3_bucket}
+S3_KEY={s3_key}
 MODELEOF
 log_step 'model_env_written model_id={model_id}'
 
@@ -255,11 +235,8 @@ CWEOF
 fi
 log_step 'cloudwatch_agent_configured'
 
-{fetch_model}
-
-# Start vLLM (assumes AMI has llama-server configured via systemd)
-log_step 'llama_service_start'
+# vLLM service handles model download + server start on both cold and warm starts.
+# Cloud-init only configures the environment and enables the service.
 systemctl enable vllm
-systemctl start vllm
 log_step 'cloud_init_done'
 """

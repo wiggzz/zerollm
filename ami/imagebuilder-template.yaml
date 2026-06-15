@@ -20,7 +20,7 @@ Parameters:
     Description: Instance type used by Image Builder during AMI creation (needs network bandwidth for large downloads)
   ImageVersion:
     Type: String
-    Default: 1.3.17
+    Default: 1.3.18
     Description: Semantic version for Image Builder component/recipe (bump on recipe changes)
   LlamaCppDockerImage:
     Type: String
@@ -169,16 +169,41 @@ Resources:
                       cat > /etc/zerollm-model.env <<'EOF'
                       MODEL_NAME=
                       VLLM_ARGS=
+                      S3_BUCKET=
+                      S3_KEY=
                       EOF
                       install -d -m 0755 /opt/zerollm
                       cat > /opt/zerollm/start_vllm.sh <<'EOF'
                       #!/usr/bin/env bash
                       set -euo pipefail
+
+                      # Log startup timing to coldstart log (streamed to CloudWatch on every boot).
+                      log_ts() {
+                        printf '%s coldstart:%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "${2:-}" | tee -a /var/log/zerollm-coldstart.log /var/log/vllm.log
+                      }
+
                       source /etc/zerollm-model.env
-                      if [[ -z "${!MODEL_NAME:-}" ]]; then
-                        echo "MODEL_NAME is required in /etc/zerollm-model.env" >&2
+                      if [[ -z "${!MODEL_NAME:-}" || -z "${!S3_BUCKET:-}" || -z "${!S3_KEY:-}" ]]; then
+                        echo "MODEL_NAME, S3_BUCKET, and S3_KEY are required" >&2
                         exit 1
                       fi
+
+                      # Map container path to NVMe host path.
+                      model_file="${!MODEL_NAME#/opt/models}"
+                      nvme_model="/opt/dlami/nvme/models${model_file}"
+
+                      # Download model to NVMe if not present (cold start or warm start after stop).
+                      if [[ ! -f "$nvme_model" ]]; then
+                        log_ts 'model_download_start' "bucket=${!S3_BUCKET} key=${!S3_KEY}"
+                        mkdir -p /opt/dlami/nvme/models
+                        aws s3 cp "s3://${!S3_BUCKET}/${!S3_KEY}" "$nvme_model" --no-progress
+                        sync "$nvme_model"
+                        log_ts 'model_download_done' "path=${nvme_model} size_bytes=$(stat -c%s "$nvme_model")"
+                      else
+                        log_ts 'model_on_nvme' "path=${nvme_model} size_bytes=$(stat -c%s "$nvme_model")"
+                      fi
+
+                      log_ts 'vllm_start' "model=${!MODEL_NAME}"
                       exec docker run --rm \
                         --gpus all \
                         --network host \
