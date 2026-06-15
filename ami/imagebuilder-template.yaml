@@ -162,9 +162,9 @@ Resources:
                       grep -q -- 'draft-mtp' /tmp/llama-server-help.txt
 
                       # Models are downloaded from S3 at instance boot (not baked into the AMI).
-                      # This avoids EBS snapshot lazy-initialization (~33 MB/s) by writing fresh
-                      # bytes to EBS at full provisioned throughput (~1000 MB/s).
-                      mkdir -p /opt/models
+                      # Stored on NVMe instance store to avoid EBS snapshot lazy-initialization
+                      # (~33 MB/s). NVMe delivers ~4 GB/s read throughput for model loading.
+                      mkdir -p /opt/dlami/nvme/models
 
                       cat > /etc/zerollm-model.env <<'EOF'
                       MODEL_NAME=
@@ -182,7 +182,7 @@ Resources:
                       exec docker run --rm \
                         --gpus all \
                         --network host \
-                        -v /opt/models:/opt/models \
+                        -v /opt/dlami/nvme/models:/opt/models \
                         ${LlamaCppDockerImage} \
                         -m "${!MODEL_NAME}" \
                         --host 0.0.0.0 --port 8000 \

@@ -55,6 +55,11 @@ IMAGE_VERSION="${IMAGE_VERSION:-$(_template_default ImageVersion)}"
 LLAMA_CPP_DOCKER_IMAGE="${LLAMA_CPP_DOCKER_IMAGE:-$(_template_default LlamaCppDockerImage)}"
 
 default_base_ami_for_region() {
+  # These are NVIDIA Deep Learning Base OSS Nvidia Driver GPU AMIs (Ubuntu 22.04).
+  # Dependency: the DLAMI provides dlami-nvme.service which mounts NVMe instance
+  # store to /opt/dlami/nvme. We rely on this for fast model storage (~4 GB/s
+  # read vs ~33 MB/s EBS lazy-init). Model files are stored at
+  # /opt/dlami/nvme/models/ and volume-mounted into the container as /opt/models.
   case "$1" in
     ap-southeast-2) echo "ami-021000ae4658b3c28" ;;
     us-east-2)      echo "ami-0600d0aaccc95db72" ;;
