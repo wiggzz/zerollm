@@ -20,7 +20,7 @@ Parameters:
     Description: Instance type used by Image Builder during AMI creation (needs network bandwidth for large downloads)
   ImageVersion:
     Type: String
-    Default: 1.3.18
+    Default: 1.3.19
     Description: Semantic version for Image Builder component/recipe (bump on recipe changes)
   LlamaCppDockerImage:
     Type: String
@@ -94,17 +94,27 @@ Resources:
                       set -euxo pipefail
                       trap 'echo "FAILED at line $LINENO: $BASH_COMMAND" >&2' ERR
                       export DEBIAN_FRONTEND=noninteractive
-                      apt-get update -y
-                      apt-get install -y --no-install-recommends \
+
+                      # Cloud images may still have boot-time apt jobs queued when Image Builder starts.
+                      systemctl stop apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service unattended-upgrades.service 2>/dev/null || true
+                      systemctl disable apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service unattended-upgrades.service 2>/dev/null || true
+                      systemctl mask apt-daily.service apt-daily-upgrade.service unattended-upgrades.service 2>/dev/null || true
+
+                      apt_get() {
+                        apt-get -o DPkg::Lock::Timeout=300 "$@"
+                      }
+
+                      apt_get update -y
+                      apt_get install -y --no-install-recommends \
                         ca-certificates curl \
                         python3 python3-pip python3-venv
 
                       # Disable Ubuntu background services that add 3-4 min to every boot.
                       # This is a single-purpose inference node — package updates have no value here.
                       systemctl disable unattended-upgrades apt-daily.timer apt-daily-upgrade.timer apt-news.service apt-daily.service apt-daily-upgrade.service 2>/dev/null || true
-                      apt-get remove -y --purge unattended-upgrades 2>/dev/null || true
+                      apt_get remove -y --purge unattended-upgrades 2>/dev/null || true
                       # PackageKit is a desktop package-management daemon — unused on a server
-                      apt-get remove -y --purge packagekit 2>/dev/null || true
+                      apt_get remove -y --purge packagekit 2>/dev/null || true
 
                       cat > /usr/local/sbin/zerollm-firstboot-cleanup.sh <<'EOF'
                       #!/usr/bin/env bash
@@ -148,7 +158,7 @@ Resources:
                       curl -fsSL https://get.docker.com | sh
 
                       # Install nvidia-container-toolkit so Docker can access the GPU
-                      apt-get install -y nvidia-container-toolkit
+                      apt_get install -y nvidia-container-toolkit
                       nvidia-ctk runtime configure --runtime=docker
                       systemctl enable docker
                       systemctl start docker
