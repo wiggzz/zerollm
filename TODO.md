@@ -17,6 +17,10 @@ Live follow-ups only. Completed work and historical investigation notes belong i
 - Evaluate the `--parallel 1` queueing tradeoff. Long generations can block following requests; any change must fit the target model and GPU memory.
 - Reduce control-plane cold-start latency for interactive API routes if it keeps exceeding common 10s client timeouts.
 
+## Diagnostics
+
+- Investigate "Power key pressed" in journal on warm-started GPU instances. EC2 stop/start should trigger a clean ACPI shutdown, not a power key event. Could indicate an unexpected code path in the orchestrator or cloud-init.
+
 ## Operations
 
 - Move GPU instance ingress off public `0.0.0.0/0:8000`, preferably by putting the router in the VPC or restricting ingress to explicit CIDRs/security groups.
