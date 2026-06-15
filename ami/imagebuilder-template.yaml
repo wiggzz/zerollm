@@ -92,7 +92,7 @@ Resources:
                   commands:
                     - |
                       set -euxo pipefail
-                      trap 'echo "FAILED at line ${!LINENO}: ${!BASH_COMMAND}" >&2' ERR
+                      trap 'echo "FAILED at line $LINENO: $BASH_COMMAND" >&2' ERR
                       export DEBIAN_FRONTEND=noninteractive
                       apt-get update -y
                       apt-get install -y --no-install-recommends \
@@ -179,40 +179,45 @@ Resources:
 
                       # Log startup timing to coldstart log (streamed to CloudWatch on every boot).
                       log_ts() {
-                        printf '%s coldstart:%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "${2:-}" | tee -a /var/log/zerollm-coldstart.log /var/log/vllm.log
+                        msg="$1"
+                        details=""
+                        if [[ "$#" -ge 2 ]]; then
+                          details="$2"
+                        fi
+                        printf '%s coldstart:%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$msg" "$details" | tee -a /var/log/zerollm-coldstart.log /var/log/vllm.log
                       }
 
                       source /etc/zerollm-model.env
-                      if [[ -z "${!MODEL_NAME:-}" || -z "${!S3_BUCKET:-}" || -z "${!S3_KEY:-}" ]]; then
+                      if [[ -z "$MODEL_NAME" || -z "$S3_BUCKET" || -z "$S3_KEY" ]]; then
                         echo "MODEL_NAME, S3_BUCKET, and S3_KEY are required" >&2
                         exit 1
                       fi
 
                       # Map container path to NVMe host path.
-                      model_file="${!MODEL_NAME#/opt/models}"
-                      nvme_model="/opt/dlami/nvme/models${model_file}"
+                      model_file="$(printf '%s' "$MODEL_NAME" | sed 's#^/opt/models##')"
+                      nvme_model="/opt/dlami/nvme/models$model_file"
 
                       # Download model to NVMe if not present (cold start or warm start after stop).
                       if [[ ! -f "$nvme_model" ]]; then
-                        log_ts 'model_download_start' "bucket=${!S3_BUCKET} key=${!S3_KEY}"
+                        log_ts 'model_download_start' "bucket=$S3_BUCKET key=$S3_KEY"
                         mkdir -p /opt/dlami/nvme/models
-                        aws s3 cp "s3://${!S3_BUCKET}/${!S3_KEY}" "$nvme_model" --no-progress
+                        aws s3 cp "s3://$S3_BUCKET/$S3_KEY" "$nvme_model" --no-progress
                         sync "$nvme_model"
-                        log_ts 'model_download_done' "path=${nvme_model} size_bytes=$(stat -c%s "$nvme_model")"
+                        log_ts 'model_download_done' "path=$nvme_model size_bytes=$(stat -c%s "$nvme_model")"
                       else
-                        log_ts 'model_on_nvme' "path=${nvme_model} size_bytes=$(stat -c%s "$nvme_model")"
+                        log_ts 'model_on_nvme' "path=$nvme_model size_bytes=$(stat -c%s "$nvme_model")"
                       fi
 
-                      log_ts 'vllm_start' "model=${!MODEL_NAME}"
+                      log_ts 'vllm_start' "model=$MODEL_NAME"
                       exec docker run --rm \
                         --gpus all \
                         --network host \
                         -v /opt/dlami/nvme/models:/opt/models \
                         ${LlamaCppDockerImage} \
-                        -m "${!MODEL_NAME}" \
+                        -m "$MODEL_NAME" \
                         --host 0.0.0.0 --port 8000 \
                         --no-mmap \
-                        ${!VLLM_ARGS:-}
+                        $VLLM_ARGS
                       EOF
                       chmod +x /opt/zerollm/start_vllm.sh
                       cat > /etc/systemd/system/vllm.service <<'EOF'
