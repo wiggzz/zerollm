@@ -20,7 +20,7 @@ Parameters:
     Description: Instance type used by Image Builder during AMI creation (needs network bandwidth for large downloads)
   ImageVersion:
     Type: String
-    Default: 1.3.17
+    Default: 1.3.18
     Description: Semantic version for Image Builder component/recipe (bump on recipe changes)
   LlamaCppDockerImage:
     Type: String
@@ -174,11 +174,28 @@ Resources:
                       cat > /opt/zerollm/start_vllm.sh <<'EOF'
                       #!/usr/bin/env bash
                       set -euo pipefail
+
+                      # Log startup timing to coldstart log (streamed to CloudWatch on every boot).
+                      log_ts() {
+                        printf '%s coldstart:%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "${2:-}" | tee -a /var/log/zerollm-coldstart.log
+                      }
+
                       source /etc/zerollm-model.env
                       if [[ -z "${!MODEL_NAME:-}" ]]; then
                         echo "MODEL_NAME is required in /etc/zerollm-model.env" >&2
                         exit 1
                       fi
+
+                      # Check if model exists on NVMe (absent after warm start = needs re-download).
+                      model_file="${!MODEL_NAME#/opt/models}"
+                      if [[ -f "/opt/dlami/nvme/models${model_file}" ]]; then
+                        size=$(stat -c%s "/opt/dlami/nvme/models${model_file}")
+                        log_ts 'model_on_nvme' "path=/opt/dlami/nvme/models${model_file} size_bytes=${size}"
+                      else
+                        log_ts 'model_missing_from_nvme' "path=/opt/dlami/nvme/models${model_file}"
+                      fi
+
+                      log_ts 'vllm_start' "model=${!MODEL_NAME}"
                       exec docker run --rm \
                         --gpus all \
                         --network host \
