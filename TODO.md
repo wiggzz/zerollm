@@ -21,6 +21,10 @@ Live follow-ups only. Completed work and historical investigation notes belong i
 
 - Investigate "Power key pressed" in journal on warm-started GPU instances. EC2 stop/start should trigger a clean ACPI shutdown, not a power key event. Could indicate an unexpected code path in the orchestrator or cloud-init.
 
+## Tooling
+
+- Auto-bump AMI ImageVersion on template changes. CloudFormation fails with `AlreadyExists` if the ImageBuilder recipe version isn't incremented when the template changes. Options: auto-bump in deploy.sh, use git hash as version in CI, or add a PR check that fails if template changed but version didn't bump.
+
 ## Operations
 
 - Move GPU instance ingress off public `0.0.0.0/0:8000`, preferably by putting the router in the VPC or restricting ingress to explicit CIDRs/security groups.
