@@ -184,6 +184,7 @@ class EC2ComputeBackend:
         # On warm start (stop/start), NVMe is wiped so the model is re-downloaded.
         # This is faster than the EBS lazy-initialization penalty (~15 min for 18GB).
         s3_key = model_config.get("s3_key", "")
+        s3_bucket = self._models_bucket if s3_key else ""
         if self._models_bucket and s3_key:
             fetch_model = (
                 f"log_step 'model_download_start bucket={self._models_bucket} key={s3_key}'\n"
@@ -212,10 +213,12 @@ log_step() {{
 
 log_step 'cloud_init_start model={model_name}'
 
-# Write model config
+# Write model config (S3 creds used by start_vllm.sh for warm-start re-download)
 cat > /etc/zerollm-model.env << 'MODELEOF'
 MODEL_NAME={model_id}
 VLLM_ARGS="{vllm_args}"
+S3_BUCKET={s3_bucket}
+S3_KEY={s3_key}
 MODELEOF
 log_step 'model_env_written model_id={model_id}'
 

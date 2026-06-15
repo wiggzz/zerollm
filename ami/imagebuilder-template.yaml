@@ -169,6 +169,8 @@ Resources:
                       cat > /etc/zerollm-model.env <<'EOF'
                       MODEL_NAME=
                       VLLM_ARGS=
+                      S3_BUCKET=
+                      S3_KEY=
                       EOF
                       install -d -m 0755 /opt/zerollm
                       cat > /opt/zerollm/start_vllm.sh <<'EOF'
@@ -186,13 +188,26 @@ Resources:
                         exit 1
                       fi
 
-                      # Check if model exists on NVMe (absent after warm start = needs re-download).
+                      # Map container path to NVMe host path.
                       model_file="${!MODEL_NAME#/opt/models}"
-                      if [[ -f "/opt/dlami/nvme/models${model_file}" ]]; then
-                        size=$(stat -c%s "/opt/dlami/nvme/models${model_file}")
-                        log_ts 'model_on_nvme' "path=/opt/dlami/nvme/models${model_file} size_bytes=${size}"
+                      nvme_model="/opt/dlami/nvme/models${model_file}"
+
+                      # On warm start (stop/start), NVMe is wiped and model is missing.
+                      # Re-download from S3 if S3 credentials are available.
+                      if [[ ! -f "$nvme_model" ]]; then
+                        log_ts 'model_missing_from_nvme' "path=${nvme_model}"
+                        if [[ -n "${!S3_BUCKET:-}" && -n "${!S3_KEY:-}" ]]; then
+                          log_ts 'model_redownload_start' "bucket=${!S3_BUCKET} key=${!S3_KEY}"
+                          mkdir -p /opt/dlami/nvme/models
+                          aws s3 cp "s3://${!S3_BUCKET}/${!S3_KEY}" "$nvme_model" --no-progress
+                          sync "$nvme_model"
+                          log_ts 'model_redownload_done' "path=${nvme_model} size_bytes=$(stat -c%s "$nvme_model")"
+                        else
+                          echo "Model missing from NVMe and no S3 credentials available" >&2
+                          exit 1
+                        fi
                       else
-                        log_ts 'model_missing_from_nvme' "path=/opt/dlami/nvme/models${model_file}"
+                        log_ts 'model_on_nvme' "path=${nvme_model} size_bytes=$(stat -c%s "$nvme_model")"
                       fi
 
                       log_ts 'vllm_start' "model=${!MODEL_NAME}"
