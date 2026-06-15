@@ -174,27 +174,33 @@ class EC2ComputeBackend:
         model_name = model_config.get("name", model_id)
         model_name_safe = model_name.replace("/", "_")
 
+        # Resolve to NVMe instance store path.
+        # model_id from config uses /opt/models/ prefix (Docker mount path).
+        # On the host, the actual storage is /opt/dlami/nvme/models/.
+        nvme_path = model_id.replace("/opt/models", "/opt/dlami/nvme/models")
+
         # If a models bucket and s3_key are present, download from S3 at boot.
-        # Writing fresh bytes to EBS runs at full provisioned throughput (1000 MB/s),
-        # bypassing the ~33 MB/s EBS snapshot lazy-initialization penalty.
+        # Models are stored on NVMe instance store for fast reads (~4 GB/s).
+        # On warm start (stop/start), NVMe is wiped so the model is re-downloaded.
+        # This is faster than the EBS lazy-initialization penalty (~15 min for 18GB).
         s3_key = model_config.get("s3_key", "")
         if self._models_bucket and s3_key:
             fetch_model = (
                 f"log_step 'model_download_start bucket={self._models_bucket} key={s3_key}'\n"
-                f"mkdir -p /opt/models\n"
-                f"if test -s {model_id}; then\n"
-                f"  log_step 'model_download_skip_existing path={model_id} size_bytes='$(stat -c%s {model_id})\n"
+                f"mkdir -p /opt/dlami/nvme/models\n"
+                f"if test -s {nvme_path}; then\n"
+                f"  log_step 'model_download_skip_existing path={nvme_path} size_bytes='$(stat -c%s {nvme_path})\n"
                 f"else\n"
-                f"  aws s3 cp s3://{self._models_bucket}/{s3_key} {model_id} --no-progress\n"
-                f"  sync {model_id}\n"
+                f"  aws s3 cp s3://{self._models_bucket}/{s3_key} {nvme_path} --no-progress\n"
+                f"  sync {nvme_path}\n"
                 f"fi\n"
-                f"log_step 'model_download_done path={model_id} size_bytes='$(stat -c%s {model_id})"
+                f"log_step 'model_download_done path={nvme_path} size_bytes='$(stat -c%s {nvme_path})"
             )
         else:
             fetch_model = (
-                f"log_step 'model_prebaked_expected path={model_id}'\n"
-                f"test -s {model_id}\n"
-                f"log_step 'model_prebaked_found path={model_id} size_bytes='$(stat -c%s {model_id})"
+                f"log_step 'model_prebaked_expected path={nvme_path}'\n"
+                f"test -s {nvme_path}\n"
+                f"log_step 'model_prebaked_found path={nvme_path} size_bytes='$(stat -c%s {nvme_path})"
             )
 
         return f"""#!/bin/bash

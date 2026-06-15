@@ -22,11 +22,11 @@ def test_build_user_data_downloads_s3_model_and_logs_cold_start_steps():
         }
     )
 
-    assert "aws s3 cp s3://zerollm-models-dev-123/model.gguf /opt/models/model.gguf" in user_data
-    assert "if test -s /opt/models/model.gguf" in user_data
-    assert "log_step 'model_download_skip_existing path=/opt/models/model.gguf size_bytes='" in user_data
+    assert "aws s3 cp s3://zerollm-models-dev-123/model.gguf /opt/dlami/nvme/models/model.gguf" in user_data
+    assert "if test -s /opt/dlami/nvme/models/model.gguf" in user_data
+    assert "log_step 'model_download_skip_existing path=/opt/dlami/nvme/models/model.gguf size_bytes='" in user_data
     assert "log_step 'model_download_start bucket=zerollm-models-dev-123 key=model.gguf'" in user_data
-    assert "log_step 'model_download_done path=/opt/models/model.gguf size_bytes='" in user_data
+    assert "log_step 'model_download_done path=/opt/dlami/nvme/models/model.gguf size_bytes='" in user_data
     assert 'log_group_name": "/zerollm/coldstart"' in user_data
     assert "--api-key secret" in user_data
     assert "systemctl enable vllm" in user_data
@@ -42,8 +42,8 @@ def test_build_user_data_validates_prebaked_model_when_s3_key_absent():
     )
 
     assert "aws s3 cp" not in user_data
-    assert "log_step 'model_prebaked_expected path=/opt/models/small.gguf'" in user_data
-    assert "test -s /opt/models/small.gguf" in user_data
+    assert "log_step 'model_prebaked_expected path=/opt/dlami/nvme/models/small.gguf'" in user_data
+    assert "test -s /opt/dlami/nvme/models/small.gguf" in user_data
 
 
 def test_launch_tags_instance_and_volume_with_stack_ownership():
