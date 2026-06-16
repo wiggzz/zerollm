@@ -236,7 +236,7 @@ fi
 log_step 'cloudwatch_agent_configured'
 
 # vLLM service handles model download + server start on both cold and warm starts.
-# Cloud-init only configures the environment and enables the service.
-systemctl enable vllm
+# Cloud-init writes the per-model environment after boot, so enable and start it here.
+systemctl enable --now vllm
 log_step 'cloud_init_done'
 """

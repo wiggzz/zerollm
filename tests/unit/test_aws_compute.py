@@ -28,9 +28,8 @@ def test_build_user_data_writes_env_and_enables_service():
     assert "S3_KEY=model.gguf" in user_data
     # Cloud-init does NOT download model anymore (unified in start_vllm.sh)
     assert "aws s3 cp" not in user_data
-    # Cloud-init enables vllm service (start_vllm.sh handles model fetch)
-    assert "systemctl enable vllm" in user_data
-    assert "systemctl start vllm" not in user_data  # systemd auto-starts on boot
+    # Cloud-init enables and starts vllm service after writing per-model config.
+    assert "systemctl enable --now vllm" in user_data
     assert 'log_group_name": "/zerollm/coldstart"' in user_data
     assert "--api-key secret" in user_data
 
