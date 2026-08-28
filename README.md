@@ -111,7 +111,7 @@ First inference for a cold model currently returns a cold-start response and tri
 
 Default models:
 
-- `Qwen/Qwen3.6-27B` on `g6e.2xlarge`
+- `Qwen/Qwen3.8-27B` on `g6e.2xlarge`
 - `Qwen/Qwen3.5-4B` on `g5.xlarge`
 
 ## Useful Commands
@@ -143,7 +143,7 @@ Add a provider in `~/.pi/agent/models.json`:
       "apiKey": "<zllm-key>",
       "models": [
         { "id": "Qwen/Qwen3.5-4B", "contextWindow": 131072, "reasoning": true, "compat": { "thinkingFormat": "deepseek" } },
-        { "id": "Qwen/Qwen3.6-27B", "contextWindow": 262144, "reasoning": true, "compat": { "thinkingFormat": "deepseek" } }
+        { "id": "Qwen/Qwen3.8-27B", "contextWindow": 262144, "reasoning": true, "compat": { "thinkingFormat": "deepseek" } }
       ]
     }
   }
@@ -155,7 +155,7 @@ Set the default in `~/.pi/agent/settings.json`:
 ```json
 {
   "defaultProvider": "zerollm",
-  "defaultModel": "Qwen/Qwen3.6-27B",
+  "defaultModel": "Qwen/Qwen3.8-27B",
   "defaultThinkingLevel": "medium"
 }
 ```

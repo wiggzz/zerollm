@@ -43,12 +43,13 @@ def test_load_models_reads_repo_manifest():
     models = seed_models.load_models()
 
     assert [model["name"] for model in models] == [
-        "Qwen/Qwen3.6-27B",
+        "Qwen/Qwen3.8-27B",
         "Qwen/Qwen3.5-4B",
     ]
-    assert models[0]["hf_repo"] == "unsloth/Qwen3.6-27B-MTP-GGUF"
-    assert models[0]["hf_revision"] == "5cb35eb3dcbf52dbce5f87dbc64df6aaffadcace"
-    assert models[0]["hf_file"] == "Qwen3.6-27B-UD-Q4_K_XL.gguf"
+    assert models[0]["hf_repo"] == "unsloth/Qwen3.8-27B-GGUF"
+    assert models[0]["hf_revision"] == "4ca720788d1e01f1bff70c033e0d0028fd02e502"
+    assert models[0]["hf_file"] == "Qwen3.8-27B-UD-Q4_K_M.gguf"
+    assert models[0]["model_id"] == "/opt/models/Qwen3.8-27B-UD-Q4_K_M.gguf"
     assert models[0]["instance_type"] == "g6e.2xlarge"
     assert "--ctx-size 262144" in models[0]["vllm_args"]
     assert "--spec-type draft-mtp" in models[0]["vllm_args"]
@@ -118,11 +119,11 @@ def test_prune_stale_models_deletes_rows_absent_from_manifest():
 
     deleted = seed_models.prune_stale_models(
         table,
-        {"Qwen/Qwen3.6-27B", "Qwen/Qwen3.5-4B"},
+        {"Qwen/Qwen3.8-27B", "Qwen/Qwen3.5-4B"},
     )
 
-    assert deleted == ["Qwen/Qwen3.5-27B"]
-    assert table.deleted == ["Qwen/Qwen3.5-27B"]
+    assert deleted == ["Qwen/Qwen3.6-27B", "Qwen/Qwen3.5-27B"]
+    assert table.deleted == ["Qwen/Qwen3.6-27B", "Qwen/Qwen3.5-27B"]
 
 
 class _FakeRemoteFile:
