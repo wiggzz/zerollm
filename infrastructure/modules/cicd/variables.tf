@@ -22,7 +22,23 @@ variable "role_prefix" {
   type = string
 }
 
-variable "stack_prefix" {
+variable "cloudformation_stack_prefix" {
+  type = string
+}
+
+variable "models_bucket_prefix" {
+  type = string
+}
+
+variable "model_sync_project_prefix" {
+  type = string
+}
+
+variable "api_keys_table_prefix" {
+  type = string
+}
+
+variable "iam_resource_prefix" {
   type = string
 }
 
