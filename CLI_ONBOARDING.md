@@ -119,11 +119,11 @@ Region: us-east-2
 Streaming URL: https://example.lambda-url.us-east-2.on.aws/
 
 Models:
-  Qwen/Qwen3.6-27B    configured
+  Qwen/Qwen3.8-27B    configured
   Qwen/Qwen3.5-4B     configured
 
 Instances:
-  Qwen/Qwen3.6-27B    ready      i-0123456789abcdef0
+  Qwen/Qwen3.8-27B    ready      i-0123456789abcdef0
   Qwen/Qwen3.5-4B     cold
 ```
 

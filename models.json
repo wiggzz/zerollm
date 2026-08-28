@@ -1,13 +1,13 @@
 {
   "models": [
     {
-      "name": "Qwen/Qwen3.6-27B",
-      "hf_repo": "unsloth/Qwen3.6-27B-MTP-GGUF",
-      "hf_revision": "5cb35eb3dcbf52dbce5f87dbc64df6aaffadcace",
-      "hf_file": "Qwen3.6-27B-UD-Q4_K_XL.gguf",
-      "model_id": "/opt/models/Qwen3.6-27B-UD-Q4_K_XL.gguf",
+      "name": "Qwen/Qwen3.8-27B",
+      "hf_repo": "unsloth/Qwen3.8-27B-GGUF",
+      "hf_revision": "4ca720788d1e01f1bff70c033e0d0028fd02e502",
+      "hf_file": "Qwen3.8-27B-UD-Q4_K_M.gguf",
+      "model_id": "/opt/models/Qwen3.8-27B-UD-Q4_K_M.gguf",
       "instance_type": "g6e.2xlarge",
-      "vllm_args": "-ngl 99 --ctx-size 262144 --parallel 1 --jinja --cache-ram 40960 --spec-type draft-mtp --spec-draft-n-max 2",
+      "vllm_args": "-ngl 99 -ngld 99 --ctx-size 262144 --parallel 1 --jinja --cache-ram 40960 --spec-type draft-mtp --spec-draft-n-max 3",
       "idle_timeout": 300,
       "warm_timeout": 28800
     },
