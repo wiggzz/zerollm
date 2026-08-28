@@ -53,7 +53,8 @@ def test_load_models_reads_repo_manifest():
     assert models[0]["instance_type"] == "g6e.2xlarge"
     assert "--ctx-size 262144" in models[0]["vllm_args"]
     assert "--spec-type draft-mtp" in models[0]["vllm_args"]
-    assert "--spec-draft-n-max 2" in models[0]["vllm_args"]
+    assert "--spec-draft-n-max 3" in models[0]["vllm_args"]
+    assert "-ngld 99" in models[0]["vllm_args"]
     assert models[1]["hf_repo"] == "unsloth/Qwen3.5-4B-MTP-GGUF"
     assert models[1]["hf_revision"] == "86835bf9949e4d14d6860f7910b1340ad4f271a9"
     assert models[1]["hf_file"] == "Qwen3.5-4B-UD-Q4_K_XL.gguf"
