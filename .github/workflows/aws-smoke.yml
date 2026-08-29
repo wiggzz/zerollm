@@ -25,7 +25,7 @@ on:
       model:
         description: Model to smoke test
         required: true
-        default: Qwen/Qwen3.5-4B
+        default: Qwen/Qwen3.8-27B
       cfn_role_arn:
         description: Optional CloudFormation execution role ARN. Defaults to zerollm-cloudformation-execution-role-dev in aws_account_id.
         required: false
@@ -70,7 +70,7 @@ jobs:
       INPUT_HF_TOKEN_SECRET_ARN: ${{ inputs.hf_token_secret_arn || secrets.HF_TOKEN_SECRET_ARN }}
       AMI_BUILD_MODE: ${{ inputs.ami_build_mode || 'auto' }}
       CLEANUP: ${{ github.event_name != 'workflow_dispatch' || inputs.cleanup }}
-      SMOKE_MODEL: ${{ inputs.model || 'Qwen/Qwen3.5-4B' }}
+      SMOKE_MODEL: ${{ inputs.model || 'Qwen/Qwen3.8-27B' }}
       SMOKE_TIMEOUT_SECONDS: ${{ inputs.smoke_timeout_seconds || '900' }}
       AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || format('arn:aws:iam::{0}:role/zerollm-deployment-role-dev', inputs.aws_account_id || '265978616089') }}
       AWS_ACCESS_KEY_ID_SECRET: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -188,6 +188,28 @@ jobs:
 
       - name: Run LLM smoke request
         run: uv run --no-sync python scripts/aws_smoke_request.py
+
+      - name: Write immutable promotion metadata
+        if: success() && github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          ami_id="$(awk -F= '/^Using GpuAmiId=/{print $2}' deploy.log | tail -1)"
+          test -n "${ami_id}"
+          uv run --no-sync python scripts/promotion_metadata.py write \
+            --output promotion-metadata.json \
+            --commit-sha "${GITHUB_SHA}" \
+            --region "${AWS_REGION}" \
+            --ami-id "${ami_id}" \
+            --manifest models.json
+
+      - name: Upload immutable promotion metadata
+        if: success() && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: promotion-metadata
+          path: promotion-metadata.json
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Show smoke stack events on failure
         if: failure()

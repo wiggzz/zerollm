@@ -43,3 +43,18 @@ subject through allowed_github_subjects.
 The deployment policy is intended for SAM deploys that use an existing AMI
 pipeline image, for example AMI_BUILD_MODE=latest. Building or updating the
 Image Builder pipeline needs a separate, broader bootstrap permission set.
+
+## Automatic Production Promotion
+
+A successful push-to-`main` AWS Smoke run attests the exact commit, AMI ID,
+region, and model-manifest SHA-256. `Production Deploy` then uses the existing
+trusted `dev` GitHub Environment and deployment role to create or update the
+separate `zerollm-prod` CloudFormation stack with `Environment=prod`. It first
+refuses a stale smoke SHA and validates the attestation, so it never promotes a
+mutable AMI lookup or an unverified commit. No enable flag, manual prod stack
+bootstrap, or additional GitHub secrets are required.
+
+The workflow environment is intentionally `dev` only for its pre-existing OIDC
+trust; it does not make the deployed application a dev stack. A future
+least-privilege prod-specific OIDC role can replace this bootstrap path after
+that role exists.

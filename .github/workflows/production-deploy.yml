@@ -1,0 +1,137 @@
+name: Production Deploy
+
+on:
+  workflow_run:
+    workflows:
+      - AWS Smoke
+    types:
+      - completed
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+concurrency:
+  group: zerollm-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    # Existing OIDC trust is bound to this established environment. The deployed
+    # CloudFormation stack remains independently named/configured as prod.
+    environment: dev
+    timeout-minutes: 90
+    env:
+      SMOKE_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      SMOKE_RUN_ID: ${{ github.event.workflow_run.id }}
+      STACK_NAME: zerollm-prod
+      ENVIRONMENT: prod
+      SMOKE_MODEL: Qwen/Qwen3.8-27B
+      SMOKE_TIMEOUT_SECONDS: "900"
+      AWS_ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || 'arn:aws:iam::265978616089:role/zerollm-deployment-role-dev' }}
+      CFN_ROLE_ARN: ${{ secrets.CFN_ROLE_ARN || 'arn:aws:iam::265978616089:role/zerollm-cloudformation-execution-role-dev' }}
+      HF_TOKEN_SECRET_ARN: ${{ secrets.HF_TOKEN_SECRET_ARN }}
+    steps:
+      - name: Check out the smoke-tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Refuse to promote a stale smoke result
+        id: guard
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          current_main="$(git rev-parse origin/main)"
+          if [[ "${SMOKE_HEAD_SHA}" != "${current_main}" ]]; then
+            echo "Smoke tested ${SMOKE_HEAD_SHA}, but main is now ${current_main}; a newer commit needs smoke verification."
+            echo "promote=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "promote=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Download immutable smoke metadata
+        if: steps.guard.outputs.promote == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: promotion-metadata
+          path: .promotion
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify immutable promotion inputs
+        if: steps.guard.outputs.promote == 'true'
+        run: |
+          set -euo pipefail
+          python scripts/promotion_metadata.py validate \
+            --metadata .promotion/promotion-metadata.json \
+            --expected-commit-sha "${SMOKE_HEAD_SHA}" \
+            --manifest models.json >> "${GITHUB_ENV}"
+
+      - name: Configure AWS credentials
+        if: steps.guard.outputs.promote == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+
+      - name: Set up Python
+        if: steps.guard.outputs.promote == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up uv
+        if: steps.guard.outputs.promote == 'true'
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Node
+        if: steps.guard.outputs.promote == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up SAM CLI
+        if: steps.guard.outputs.promote == 'true'
+        uses: aws-actions/setup-sam@v2
+
+      - name: Install dependencies
+        if: steps.guard.outputs.promote == 'true'
+        run: uv sync --extra dev --extra upload
+
+      - name: Deploy the verified production stack
+        if: steps.guard.outputs.promote == 'true'
+        run: |
+          set -o pipefail
+          SYNC_MODELS_ON_DEPLOY=1 \
+          ./scripts/deploy.sh | tee deploy.log
+
+      - name: Wait for production model sync
+        if: steps.guard.outputs.promote == 'true'
+        run: |
+          set -euo pipefail
+          build_id="$(awk -F': ' '/Started model sync build:/ {print $2}' deploy.log | tail -1)"
+          if [[ -z "${build_id}" ]]; then
+            echo "No model sync build started; refusing to promote an unseeded production stack." >&2
+            exit 1
+          fi
+          while true; do
+            status="$(aws codebuild batch-get-builds --ids "${build_id}" --query 'builds[0].buildStatus' --output text)"
+            echo "Production model sync status: ${status}"
+            case "${status}" in
+              SUCCEEDED) exit 0 ;;
+              FAILED|FAULT|STOPPED|TIMED_OUT) exit 1 ;;
+            esac
+            sleep 30
+          done
+
+      - name: Smoke test the promoted Qwen3.8 endpoint
+        if: steps.guard.outputs.promote == 'true'
+        run: uv run --no-sync python scripts/aws_smoke_request.py
