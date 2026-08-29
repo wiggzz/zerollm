@@ -7,11 +7,14 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROMOTION_METADATA = REPO_ROOT / "scripts" / "promotion_metadata.py"
-INFRA_DEPLOY = REPO_ROOT / "infrastructure" / "deploy.sh"
+PRODUCTION_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "production-deploy.yml"
 
 
 def _run_metadata(*args: str) -> subprocess.CompletedProcess[str]:
@@ -22,6 +25,22 @@ def _run_metadata(*args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
     )
+
+
+def _load_workflow(path: Path) -> dict[str, Any]:
+    document = yaml.load(path.read_text(), Loader=yaml.BaseLoader)
+    assert isinstance(document, dict)
+    return document
+
+
+def test_production_workflow_uses_existing_dev_trust_without_an_enable_toggle():
+    workflow = _load_workflow(PRODUCTION_WORKFLOW)
+    deploy = workflow["jobs"]["deploy"]
+
+    assert deploy["environment"] == "dev"
+    assert "PRODUCTION_DEPLOY_ENABLED" not in deploy["if"]
+    assert "zerollm-deployment-role-dev" in deploy["env"]["AWS_ROLE_TO_ASSUME"]
+    assert "zerollm-cloudformation-execution-role-dev" in deploy["env"]["CFN_ROLE_ARN"]
 
 
 def test_promotion_metadata_round_trip_binds_ami_manifest_and_smoke_sha(tmp_path: Path):
@@ -133,41 +152,3 @@ def test_promotion_metadata_rejects_a_manifest_that_drifted_after_smoke(tmp_path
 
     assert validated.returncode != 0
     assert "manifest SHA-256" in validated.stderr
-
-
-def test_infrastructure_deploy_accepts_prod_and_uses_the_prod_root(tmp_path: Path):
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    log = tmp_path / "commands.log"
-
-    (bin_dir / "aws").write_text(
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        "test \"$1 $2\" = 's3api head-bucket'\n"
-    )
-    (bin_dir / "terraform").write_text(
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        "printf '%s|%s\\n' \"$PWD\" \"$*\" >> \"$COMMAND_LOG\"\n"
-    )
-    for executable in bin_dir.iterdir():
-        executable.chmod(0o755)
-
-    result = subprocess.run(
-        ["bash", str(INFRA_DEPLOY), "prod"],
-        cwd=REPO_ROOT,
-        env={
-            **os.environ,
-            "PATH": f"{bin_dir}:{os.environ['PATH']}",
-            "COMMAND_LOG": str(log),
-        },
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert log.read_text().splitlines() == [
-        f"{REPO_ROOT}/infrastructure/environments/prod|init -migrate-state -force-copy",
-        f"{REPO_ROOT}/infrastructure/environments/prod|apply",
-    ]

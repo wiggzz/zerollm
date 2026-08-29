@@ -16,15 +16,16 @@ The backend uses Terraform's S3 lockfile support, so Terraform 1.10 or newer is
 required. The checked-in `.terraform.lock.hcl` remains the provider dependency
 lock file and should stay in git.
 
-## Deploy Environment Roles
+## Deploy Dev Roles
 
 Run with privileged local AWS credentials:
 
     cd infrastructure
     ./deploy.sh dev
-    ./deploy.sh prod
 
-Each environment has a separate Terraform state key and creates a separate GitHub-assumable deployment role plus CloudFormation execution role. The deploy script creates the state bucket if it is missing, enables versioning, blocks public access, enables AES-256 server-side encryption, and runs `terraform init -migrate-state -force-copy` before applying.
+The deploy script creates the state bucket if it is missing, enables versioning,
+blocks public access, enables AES-256 server-side encryption, and runs
+`terraform init -migrate-state -force-copy` before applying.
 
 Useful outputs:
 
@@ -43,24 +44,17 @@ The deployment policy is intended for SAM deploys that use an existing AMI
 pipeline image, for example AMI_BUILD_MODE=latest. Building or updating the
 Image Builder pipeline needs a separate, broader bootstrap permission set.
 
-## Production Promotion
+## Automatic Production Promotion
 
-`AWS Smoke` emits an artifact that binds its successful commit, exact AMI ID,
-region, and SHA-256 of `models.json`. `Production Deploy` runs only for a
-successful push-to-main smoke whose commit is still the current `main` head; it
-validates that artifact before using the recorded AMI ID for `zerollm-prod`.
-It never promotes a mutable “latest” AMI reference.
+A successful push-to-`main` AWS Smoke run attests the exact commit, AMI ID,
+region, and model-manifest SHA-256. `Production Deploy` then uses the existing
+trusted `dev` GitHub Environment and deployment role to create or update the
+separate `zerollm-prod` CloudFormation stack with `Environment=prod`. It first
+refuses a stale smoke SHA and validates the attestation, so it never promotes a
+mutable AMI lookup or an unverified commit. No enable flag, manual prod stack
+bootstrap, or additional GitHub secrets are required.
 
-Before enabling promotion, create the protected GitHub `prod` environment, run
-`./deploy.sh prod`, and set these **prod-environment** secrets from Terraform
-outputs:
-
-- `AWS_ROLE_TO_ASSUME` ← `github_deploy_role_arn`
-- `CFN_ROLE_ARN` ← `cloudformation_execution_role_arn`
-- `HF_TOKEN_SECRET_ARN` (optional)
-
-Set the GitHub Actions variable `PRODUCTION_DEPLOY_ENABLED=true` only after
-those secrets and the role trust are in place. Until then, production-promotion
-jobs are intentionally skipped. The prod trust permits only
-`repo:wiggzz/zerollm:environment:prod`; it does not inherit dev or pull-request
-access.
+The workflow environment is intentionally `dev` only for its pre-existing OIDC
+trust; it does not make the deployed application a dev stack. A future
+least-privilege prod-specific OIDC role can replace this bootstrap path after
+that role exists.

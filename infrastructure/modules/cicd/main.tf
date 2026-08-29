@@ -4,12 +4,8 @@ locals {
   deploy_policy_name               = "${var.role_prefix}-deployment-role-${var.environment}-policy"
   cloudformation_role_name         = "${var.role_prefix}-cloudformation-execution-role-${var.environment}"
   cloudformation_policy_name       = "${var.role_prefix}-cloudformation-execution-role-${var.environment}-policy"
-  cloudformation_stack_arn_pattern = "arn:aws:cloudformation:${var.aws_region}:${var.account_id}:stack/${var.cloudformation_stack_prefix}*/*"
-  model_bucket_arn_pattern         = "arn:aws:s3:::${var.models_bucket_prefix}*-${var.account_id}"
-  model_sync_project_arn_pattern   = "arn:aws:codebuild:${var.aws_region}:${var.account_id}:project/${var.model_sync_project_prefix}*"
-  api_keys_table_arn_pattern       = "arn:aws:dynamodb:${var.aws_region}:${var.account_id}:table/${var.api_keys_table_prefix}*"
-  iam_resource_arn_pattern         = "arn:aws:iam::${var.account_id}:role/${var.iam_resource_prefix}*"
-  iam_instance_profile_arn_pattern = "arn:aws:iam::${var.account_id}:instance-profile/${var.iam_resource_prefix}*"
+  cloudformation_stack_arn_pattern = "arn:aws:cloudformation:${var.aws_region}:${var.account_id}:stack/${var.stack_prefix}*/*"
+  model_bucket_arn_pattern         = "arn:aws:s3:::${var.stack_prefix}-models-*-${var.account_id}"
   sam_bucket_arn_pattern           = "arn:aws:s3:::aws-sam-cli-managed-default-samclisourcebucket-*"
 }
 
@@ -129,13 +125,15 @@ data "aws_iam_policy_document" "github_deploy" {
       "codebuild:BatchGetBuilds",
       "codebuild:StartBuild",
     ]
-    resources = [local.model_sync_project_arn_pattern]
+    resources = [
+      "arn:aws:codebuild:${var.aws_region}:${var.account_id}:project/${var.stack_prefix}*-model-sync-*",
+    ]
   }
 
   statement {
     sid       = "SmokeApiKeyWrite"
     actions   = ["dynamodb:PutItem"]
-    resources = [local.api_keys_table_arn_pattern]
+    resources = ["arn:aws:dynamodb:${var.aws_region}:${var.account_id}:table/${var.stack_prefix}-api-keys-*"]
   }
 
   statement {
@@ -255,8 +253,8 @@ data "aws_iam_policy_document" "cloudformation_execution" {
       "iam:UpdateAssumeRolePolicy",
     ]
     resources = [
-      local.iam_resource_arn_pattern,
-      local.iam_instance_profile_arn_pattern,
+      "arn:aws:iam::${var.account_id}:role/${var.stack_prefix}*",
+      "arn:aws:iam::${var.account_id}:instance-profile/${var.stack_prefix}*",
     ]
   }
 
