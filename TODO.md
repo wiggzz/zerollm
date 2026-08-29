@@ -13,13 +13,17 @@ Live follow-ups only. Completed work and historical investigation notes belong i
 ## Client Behavior
 
 - Replace cold-start 503s with wait-until-ready streaming behavior. Keep OpenAI-compatible streams valid for normal clients while exposing richer progress events for clients that opt in.
+- Add a compatibility strategy and regression test for client tool schemas that `llama-server` cannot compile. OpenClaw 2026.7.1 emits an unanchored `pattern: "\\S"` for its cron tool, while the deployed `llama-server` requires patterns to start with `^` and end with `$`, causing the whole request to fail with 400 before inference.
 - Decide how clients should cancel backend generation. Lambda Function URL response streaming does not reliably stop the upstream request when a caller disconnects.
+- Experiment with aborting upstream `fetch()` in `streaming_router.js` when the Lambda response stream emits close/error. Verify against real Lambda Function URLs before relying on it for cancellation semantics.
+- Validate API Gateway HTTP API behavior for SSE/chunked inference with a real streaming backend. Record timeout, buffering, `Transfer-Encoding`, and client disconnect behavior before considering it for inference routing.
 - Evaluate the `--parallel 1` queueing tradeoff. Long generations can block following requests; any change must fit the target model and GPU memory.
 - Reduce control-plane cold-start latency for interactive API routes if it keeps exceeding common 10s client timeouts.
 
 ## Diagnostics
 
 - Investigate "Power key pressed" in journal on warm-started GPU instances. EC2 stop/start should trigger a clean ACPI shutdown, not a power key event. Could indicate an unexpected code path in the orchestrator or cloud-init.
+- Make historical cold-start analysis durable. Older `/zerollm/coldstart` streams can retain first/last timestamp metadata while `get-log-events`/`filter-log-events` return no events, so persist structured startup phase metrics outside raw log streams.
 
 ## Tooling
 
@@ -28,6 +32,8 @@ Live follow-ups only. Completed work and historical investigation notes belong i
 ## Operations
 
 - Move GPU instance ingress off public `0.0.0.0/0:8000`, preferably by putting the router in the VPC or restricting ingress to explicit CIDRs/security groups.
+- Design a private GPU ingress option that preserves streaming despite Lambda Function URL VPC limitations. Compare API Gateway private integration, a small VPC proxy, and InvokeWithResponseStream via a Lambda interface endpoint.
+- Move the shared GPU server API key out of CloudFormation parameters, Lambda environment variables, EC2 user data, and process args. Prefer Secrets Manager/SSM retrieval at runtime with scoped IAM, or replace the shared bearer key with a stronger origin-auth mechanism.
 - Add alarms or metrics for startup failures, health-check timeouts, and repeated cold-start failure loops.
 - Capture structured inference metrics: model, instance type, prompt/generation tokens per second, generated tokens, latency, and MTP acceptance stats.
 - Make deploy/model-sync output operator-friendly: uploaded/skipped/pruned model rows, S3 object sizes, CodeBuild run URL, and concise failure details.
